@@ -1,0 +1,39 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: codesmart-backend
+  web:
+    resources:
+      add-mappings: false
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.codesmart: DEBUG
+    org.springframework.web.socket: DEBUG
+
+codesmart:
+  parser:
+    debounce-ms: 150
+    max-file-size-kb: 512
+  execution:
+    sandbox-timeout-ms: 10000
+    max-heap-mb: 256
+  lsp:
+    enabled: true

@@ -1,0 +1,12 @@
+{
+  "name": "codesmart",
+  "version": "1.0.0",
+  "description": "Visual Java Execution IDE",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.3.1"
+  }
+}

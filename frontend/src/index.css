@@ -1,0 +1,654 @@
+@import "tailwindcss";
+
+/* ============================================================
+   CodeSmart Global Design System
+   ============================================================ */
+
+:root {
+  --cs-bg: #0d1117;
+  --cs-surface: #161b22;
+  --cs-surface-2: #21262d;
+  --cs-surface-3: #2d333b;
+  --cs-border: #30363d;
+  --cs-border-light: #444c56;
+  --cs-text: #e6edf3;
+  --cs-text-muted: #8b949e;
+  --cs-text-subtle: #6e7681;
+  --cs-accent: #7c3aed;
+  --cs-accent-glow: rgba(124, 58, 237, 0.3);
+  --cs-cyan: #06b6d4;
+  --cs-green: #3fb950;
+  --cs-yellow: #d29922;
+  --cs-red: #f85149;
+  --cs-orange: #f0883e;
+
+  /* Memory area colors */
+  --cs-stack-bg: #0d1f3c;
+  --cs-stack-border: #1e4080;
+  --cs-stack-header: #1a3560;
+  --cs-heap-bg: #0d2818;
+  --cs-heap-border: #1a5c30;
+  --cs-heap-header: #163b22;
+  --cs-string-pool-bg: #2a0d1f;
+  --cs-string-pool-border: #6b1f44;
+  --cs-static-bg: #2a2a0d;
+  --cs-static-border: #5c5c1a;
+  --cs-method-area-bg: #1a0d2a;
+  --cs-method-area-border: #44206b;
+
+  /* Panel dimensions */
+  --panel-header-height: 36px;
+  --toolbar-height: 48px;
+  --resizer-width: 4px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Scrollbars
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--cs-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--cs-border-light); }
+
+/* ============================================================
+   Panel System
+   ============================================================ */
+.panel-header {
+  height: var(--panel-header-height);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--cs-surface);
+  border-bottom: 1px solid var(--cs-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cs-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  user-select: none;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.panel-header .panel-title {
+  color: var(--cs-text);
+  font-size: 12px;
+}
+
+.panel-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+/* ============================================================
+   Glassmorphism Cards
+   ============================================================ */
+.glass {
+  background: rgba(22, 27, 34, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(48, 54, 61, 0.8);
+  border-radius: 8px;
+}
+
+.glass-dark {
+  background: rgba(13, 17, 23, 0.9);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+}
+
+/* ============================================================
+   Memory Visualization Cards
+   ============================================================ */
+.memory-region {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid;
+  transition: all 0.2s ease;
+}
+
+.memory-region-stack {
+  background: var(--cs-stack-bg);
+  border-color: var(--cs-stack-border);
+}
+
+.memory-region-heap {
+  background: var(--cs-heap-bg);
+  border-color: var(--cs-heap-border);
+}
+
+.memory-region-string-pool {
+  background: var(--cs-string-pool-bg);
+  border-color: var(--cs-string-pool-border);
+}
+
+.memory-region-static {
+  background: var(--cs-static-bg);
+  border-color: var(--cs-static-border);
+}
+
+.memory-region-method-area {
+  background: var(--cs-method-area-bg);
+  border-color: var(--cs-method-area-border);
+}
+
+.memory-var-card {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.memory-var-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.memory-var-name {
+  color: var(--cs-cyan);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.memory-var-type {
+  color: var(--cs-accent);
+  font-size: 10px;
+}
+
+.memory-var-value {
+  color: var(--cs-green);
+  font-size: 12px;
+}
+
+.memory-var-address {
+  color: var(--cs-text-subtle);
+  font-size: 10px;
+}
+
+/* ============================================================
+   Tag Badges
+   ============================================================ */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tag-primitive { background: rgba(6,182,212,0.15); color: #06b6d4; border: 1px solid rgba(6,182,212,0.3); }
+.tag-reference { background: rgba(124,58,237,0.15); color: #a78bfa; border: 1px solid rgba(124,58,237,0.3); }
+.tag-string { background: rgba(214,93,177,0.15); color: #e879f9; border: 1px solid rgba(214,93,177,0.3); }
+.tag-array { background: rgba(240,136,62,0.15); color: #fb923c; border: 1px solid rgba(240,136,62,0.3); }
+.tag-stack { background: rgba(30,64,128,0.4); color: #60a5fa; border: 1px solid #1e4080; }
+.tag-heap { background: rgba(26,92,48,0.4); color: #4ade80; border: 1px solid #1a5c30; }
+
+/* ============================================================
+   Tooltip
+   ============================================================ */
+.tooltip {
+  position: absolute;
+  z-index: 9999;
+  background: var(--cs-surface-2);
+  border: 1px solid var(--cs-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  min-width: 200px;
+  max-width: 320px;
+}
+
+/* ============================================================
+   Resizer Handle — react-resizable-panels v4 selectors
+   ============================================================ */
+
+/* Horizontal splitter (col-resize) */
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle] {
+  width: 5px;
+  background: var(--cs-border);
+  cursor: col-resize;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1px;
+  height: 32px;
+  background: var(--cs-border-light);
+  border-radius: 1px;
+  transition: background 0.15s, height 0.15s;
+}
+
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle]:hover,
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle][data-resize-handle-active] {
+  background: var(--cs-accent-glow);
+}
+
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle]:hover::after,
+[data-panel-group-direction="horizontal"] > [data-panel-resize-handle][data-resize-handle-active]::after {
+  background: var(--cs-accent);
+  height: 48px;
+}
+
+/* Vertical splitter (row-resize) */
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle] {
+  height: 5px;
+  background: var(--cs-border);
+  cursor: row-resize;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 1px;
+  background: var(--cs-border-light);
+  border-radius: 1px;
+  transition: background 0.15s, width 0.15s;
+}
+
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle]:hover,
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle][data-resize-handle-active] {
+  background: var(--cs-accent-glow);
+}
+
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle]:hover::after,
+[data-panel-group-direction="vertical"] > [data-panel-resize-handle][data-resize-handle-active]::after {
+  background: var(--cs-accent);
+  width: 48px;
+}
+
+/* ============================================================
+   AST / Flow Nodes
+   ============================================================ */
+.ast-node {
+  background: var(--cs-surface-2);
+  border: 1px solid var(--cs-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 120px;
+  text-align: center;
+}
+
+.ast-node:hover {
+  border-color: var(--cs-accent);
+  box-shadow: 0 0 0 1px var(--cs-accent-glow);
+}
+
+.ast-node-type { color: var(--cs-accent); font-weight: 600; font-size: 10px; }
+.ast-node-label { color: var(--cs-text); font-size: 11px; }
+
+/* CFG Nodes */
+.cfg-decision {
+  background: rgba(210,153,34,0.1);
+  border-color: var(--cs-yellow);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  width: 120px;
+  height: 80px;
+}
+
+.cfg-start, .cfg-end {
+  background: rgba(63,185,80,0.1);
+  border-color: var(--cs-green);
+  border-radius: 50px;
+}
+
+/* ============================================================
+   Syntax Error Gutter
+   ============================================================ */
+.error-underline {
+  border-bottom: 2px wavy var(--cs-red);
+}
+
+/* ============================================================
+   Animated reference arrows (SVG)
+   ============================================================ */
+.ref-arrow {
+  stroke: var(--cs-cyan);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 3;
+  animation: dash 1.5s linear infinite;
+  fill: none;
+  marker-end: url(#arrow-head);
+}
+
+.ref-arrow-solid {
+  stroke: var(--cs-cyan);
+  stroke-width: 1.5;
+  fill: none;
+  marker-end: url(#arrow-head);
+}
+
+@keyframes dash {
+  to { stroke-dashoffset: -18; }
+}
+
+/* ============================================================
+   GC Fade
+   ============================================================ */
+.gc-eligible {
+  animation: gc-fade 2s ease-in-out infinite alternate;
+  border-color: var(--cs-red) !important;
+}
+
+@keyframes gc-fade {
+  0% { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background: var(--cs-bg);
+  border-bottom: 1px solid var(--cs-border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  height: 36px;
+  font-size: 12px;
+  color: var(--cs-text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--cs-border);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.tab:hover { color: var(--cs-text); background: var(--cs-surface); }
+.tab.active {
+  color: var(--cs-text);
+  border-bottom-color: var(--cs-accent);
+  background: var(--cs-surface);
+}
+
+/* ============================================================
+   Button styles
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.btn-primary {
+  background: var(--cs-accent);
+  color: white;
+  border-color: var(--cs-accent);
+}
+.btn-primary:hover { background: #6d28d9; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--cs-text-muted);
+  border-color: var(--cs-border);
+}
+.btn-ghost:hover { background: var(--cs-surface-2); color: var(--cs-text); }
+
+.btn-success {
+  background: rgba(63,185,80,0.15);
+  color: var(--cs-green);
+  border-color: rgba(63,185,80,0.3);
+}
+.btn-success:hover { background: rgba(63,185,80,0.25); }
+
+.btn-danger {
+  background: rgba(248,81,73,0.15);
+  color: var(--cs-red);
+  border-color: rgba(248,81,73,0.3);
+}
+.btn-danger:hover { background: rgba(248,81,73,0.25); }
+
+.btn-icon {
+  padding: 5px;
+  min-width: 28px;
+  min-height: 28px;
+  justify-content: center;
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 6px var(--cs-accent-glow); }
+  50% { box-shadow: 0 0 16px var(--cs-accent-glow), 0 0 32px var(--cs-accent-glow); }
+}
+
+.animate-fade-in { animation: fadeIn 0.2s ease forwards; }
+.animate-slide-in { animation: slideIn 0.2s ease forwards; }
+.animate-scale-in { animation: scaleIn 0.15s ease forwards; }
+.animate-pulse-glow { animation: pulse-glow 2s ease infinite; }
+
+/* ============================================================
+   React Flow overrides
+   ============================================================ */
+.react-flow__background { background: var(--cs-bg) !important; }
+.react-flow__edge-path { stroke: var(--cs-border-light); }
+.react-flow__edge.selected .react-flow__edge-path { stroke: var(--cs-accent); }
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: var(--cs-border-light);
+  border: 2px solid var(--cs-surface-2);
+}
+.react-flow__minimap { background: var(--cs-surface) !important; }
+.react-flow__controls button {
+  background: var(--cs-surface-2) !important;
+  border-color: var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+.react-flow__controls button:hover {
+  background: var(--cs-surface-3) !important;
+}
+
+/* ============================================================
+   Monaco Editor — Breakpoints & Execution Line
+   ============================================================ */
+
+/* Breakpoint glyph in gutter */
+.cs-breakpoint-glyph {
+  background: var(--cs-red);
+  border-radius: 50%;
+  width: 12px !important;
+  height: 12px !important;
+  margin-top: 4px;
+  margin-left: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(248, 81, 73, 0.6);
+}
+
+/* Breakpoint line background */
+.cs-breakpoint-line {
+  background: rgba(248, 81, 73, 0.08) !important;
+}
+
+/* Current execution line highlight */
+.cs-current-line {
+  background: rgba(210, 153, 34, 0.2) !important;
+  border-left: 3px solid var(--cs-yellow) !important;
+}
+
+/* Current execution line glyph (arrow) */
+.cs-current-line-glyph::before {
+  content: '▶';
+  color: var(--cs-yellow);
+  font-size: 11px;
+  position: absolute;
+  left: 2px;
+  top: 3px;
+}
+
+/* Flash highlight (AST selection / search) */
+.cs-highlight-flash {
+  background: rgba(124, 58, 237, 0.25) !important;
+  border: 1px solid var(--cs-accent) !important;
+  border-radius: 2px;
+  animation: highlight-flash 1.5s ease-out forwards;
+}
+
+@keyframes highlight-flash {
+  0%   { background: rgba(124, 58, 237, 0.5) !important; }
+  100% { background: rgba(124, 58, 237, 0.1) !important; }
+}
+
+/* ============================================================
+   Context Menu
+   ============================================================ */
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--cs-surface-2);
+  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: scaleIn 0.1s ease forwards;
+  transform-origin: top left;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--cs-text-muted);
+  cursor: pointer;
+  transition: all 0.1s;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: var(--cs-surface-3);
+  color: var(--cs-text);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--cs-red);
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--cs-border);
+  margin: 4px 0;
+}
+
+/* ============================================================
+   Console Panel
+   ============================================================ */
+.console-line-stdout { color: #3fb950; }
+.console-line-stderr { color: #f85149; }
+.console-line-system { color: #8b949e; font-style: italic; }
+.console-line-stdin  { color: #06b6d4; }
+
+.console-search-highlight {
+  background: rgba(210, 153, 34, 0.4);
+  border-radius: 2px;
+}
+
+/* ============================================================
+   Collapsible Memory Region
+   ============================================================ */
+.memory-region-toggle {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+.memory-region-toggle:hover { opacity: 0.8; }
+
+/* ============================================================
+   Toolbar Separator
+   ============================================================ */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
