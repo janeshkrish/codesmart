@@ -249,6 +249,8 @@ export interface CfgNode {
   isExit?: boolean;
   condition?: string;
   loopVar?: string;
+  loopId?: string;
+  parentLoopId?: string;
   loopInit?: string;
   loopCondition?: string;
   loopUpdate?: string;

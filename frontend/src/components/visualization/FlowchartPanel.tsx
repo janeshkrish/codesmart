@@ -1,9 +1,11 @@
 import React, { useMemo, useCallback } from 'react';
 import ReactFlow, {
-  type Node, type Edge, type NodeTypes,
+  type Node, type Edge, type NodeTypes, type EdgeTypes, type EdgeProps,
+  BaseEdge, EdgeLabelRenderer,
   Background, Controls, BackgroundVariant,
   Handle, Position, MarkerType, useNodesState, useEdgesState
 } from 'reactflow';
+import dagre from '@dagrejs/dagre';
 import { useIdeStore } from '../../store/ideStore';
 import type { ControlFlowGraph, CfgNode, CfgNodeType } from '../../types';
 
@@ -29,7 +31,7 @@ function CfgNodeComponent({ data }: { data: { node: CfgNode } }) {
       transition: 'all 0.15s',
       padding: '6px 10px',
     }}>
-      <Handle type="target" position={Position.Top} style={config.handleStyle} />
+      <Handle type="target" position={Position.Left} style={config.handleStyle} />
       <div style={{ color: config.color, fontWeight: 700, fontSize: '10px', marginBottom: '2px' }}>
         {config.icon} {n.type.replace(/_/g, ' ')}
       </div>
@@ -42,7 +44,7 @@ function CfgNodeComponent({ data }: { data: { node: CfgNode } }) {
           {truncate(n.condition, 25)}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={config.handleStyle} />
+      <Handle type="source" position={Position.Right} style={config.handleStyle} />
     </div>
   );
 }
@@ -155,7 +157,67 @@ function getCfgNodeConfig(type: CfgNodeType) {
   };
 }
 
-const nodeTypes: NodeTypes = { cfgNode: CfgNodeComponent };
+function LoopGroupComponent() {
+  return (
+    <div style={{
+      width: '100%',
+      height: '100%',
+      border: '1px dashed rgba(139,92,246,0.65)',
+      background: 'rgba(124,58,237,0.06)',
+      borderRadius: '8px',
+      pointerEvents: 'none',
+    }} />
+  );
+}
+
+type LoopBackEdgeData = {
+  color: string;
+  routeY?: number;
+};
+
+function LoopBackEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  markerEnd,
+  style,
+  label,
+  data,
+}: EdgeProps<LoopBackEdgeData>) {
+  const color = data?.color ?? '#7c3aed';
+  const routeY = data?.routeY ?? Math.max(sourceY, targetY) + 80;
+  const edgePath = `M ${sourceX},${sourceY} L ${sourceX},${routeY} L ${targetX},${routeY} L ${targetX},${targetY}`;
+  const labelX = (sourceX + targetX) / 2;
+  const labelY = routeY - 10;
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+      {label && (
+        <EdgeLabelRenderer>
+          <div style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            color,
+            fontSize: 10,
+            fontFamily: 'JetBrains Mono, monospace',
+            background: '#0d1117',
+            padding: '1px 4px',
+            borderRadius: '3px',
+            pointerEvents: 'none',
+          }}>
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+
+const nodeTypes: NodeTypes = { cfgNode: CfgNodeComponent, loopGroup: LoopGroupComponent };
+const edgeTypes: EdgeTypes = { loopBack: LoopBackEdge };
 
 export function FlowchartPanel() {
   const { analysisResult } = useIdeStore();
@@ -254,6 +316,7 @@ export function FlowchartPanel() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           defaultEdgeOptions={{
@@ -270,62 +333,80 @@ export function FlowchartPanel() {
 }
 
 // ============================================================
-// Layout: top-to-bottom, 200px per node
+// Layout: dagre left-to-right ranks with loop swimlanes
 // ============================================================
 
-function buildCfgLayout(cfg: ControlFlowGraph): { nodes: Node[]; edges: Edge[] } {
+const CFG_NODE_WIDTH = 180;
+const CFG_NODE_HEIGHT = 70;
+const LOOP_PADDING_X = 36;
+const LOOP_PADDING_Y = 30;
+
+type Point = { x: number; y: number };
+type LoopBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  routeY: number;
+};
+
+export function buildCfgLayout(cfg: ControlFlowGraph): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
   if (!cfg.nodes || !cfg.edges) return { nodes, edges };
 
-  // Simple vertical layout: each node stacked, with branching side-by-side
-  const visited = new Set<string>();
-  const positions = new Map<string, { x: number; y: number }>();
-
-  // BFS layout
-  const queue: { id: string; x: number; y: number }[] = [];
-  const entryNode = cfg.nodes.find(n => n.isEntry);
-  if (entryNode) {
-    queue.push({ id: entryNode.id, x: 0, y: 0 });
-  } else if (cfg.nodes.length > 0) {
-    queue.push({ id: cfg.nodes[0].id, x: 0, y: 0 });
-  }
-
-  let maxY = 0;
-  const levelX = new Map<number, number>(); // track x per depth level
-
-  while (queue.length > 0) {
-    const { id, x, y } = queue.shift()!;
-    if (visited.has(id)) continue;
-    visited.add(id);
-
-    positions.set(id, { x, y });
-    maxY = Math.max(maxY, y);
-
-    // Find children
-    const outEdges = cfg.edges.filter(e => e.sourceId === id && !e.isBackEdge);
-    let childX = x;
-
-    for (const edge of outEdges) {
-      if (!visited.has(edge.targetId)) {
-        const isTrue = edge.label === 'TRUE';
-        const isFalse = edge.label === 'FALSE';
-        const offsetX = isTrue ? -120 : isFalse ? 120 : 0;
-        queue.push({ id: edge.targetId, x: x + offsetX, y: y + 150 });
-      }
-    }
-  }
-
-  // Add remaining unvisited nodes
-  cfg.nodes.forEach(n => {
-    if (!visited.has(n.id)) {
-      positions.set(n.id, { x: 0, y: maxY + 150 });
-      maxY += 150;
-    }
+  const graph = new dagre.graphlib.Graph();
+  graph.setDefaultEdgeLabel(() => ({}));
+  graph.setGraph({
+    rankdir: 'LR',
+    ranksep: 120,
+    nodesep: 80,
+    marginx: 40,
+    marginy: 40,
+    acyclicer: 'greedy',
   });
 
-  // Build React Flow nodes
+  cfg.nodes.forEach(n => {
+    graph.setNode(n.id, { width: CFG_NODE_WIDTH, height: CFG_NODE_HEIGHT });
+  });
+
+  cfg.edges
+    .filter(e => !e.isBackEdge)
+    .forEach(e => {
+      graph.setEdge(e.sourceId, e.targetId);
+    });
+
+  dagre.layout(graph);
+
+  const positions = new Map<string, Point>();
+  cfg.nodes.forEach(n => {
+    const layoutNode = graph.node(n.id);
+    positions.set(n.id, {
+      x: layoutNode.x - CFG_NODE_WIDTH / 2,
+      y: layoutNode.y - CFG_NODE_HEIGHT / 2,
+    });
+  });
+
+  const loopBounds = buildLoopBounds(cfg.nodes, positions);
+
+  loopBounds.forEach((bounds, loopId) => {
+    nodes.push({
+      id: `loop-group-${loopId}`,
+      type: 'loopGroup',
+      position: { x: bounds.x, y: bounds.y },
+      data: {},
+      selectable: false,
+      draggable: false,
+      connectable: false,
+      zIndex: -1,
+      style: {
+        width: bounds.width,
+        height: bounds.height,
+      },
+    });
+  });
+
   cfg.nodes.forEach(n => {
     const pos = positions.get(n.id) ?? { x: 0, y: 0 };
     nodes.push({
@@ -336,20 +417,26 @@ function buildCfgLayout(cfg: ControlFlowGraph): { nodes: Node[]; edges: Edge[] }
     });
   });
 
-  // Build React Flow edges
+  const nodesById = new Map(cfg.nodes.map(node => [node.id, node]));
+
   cfg.edges.forEach(e => {
     const edgeColor = e.isBackEdge ? '#7c3aed' :
       e.label === 'TRUE' ? '#3fb950' :
       e.label === 'FALSE' ? '#f85149' :
       e.label === 'EXCEPTION' ? '#f0883e' :
       '#30363d';
+    const sourceNode = nodesById.get(e.sourceId);
+    const targetNode = nodesById.get(e.targetId);
+    const loopId = sourceNode?.loopId ?? targetNode?.loopId;
+    const routeY = loopId ? loopBounds.get(loopId)?.routeY : undefined;
 
     edges.push({
       id: e.id,
       source: e.sourceId,
       target: e.targetId,
-      type: e.isBackEdge ? 'smoothstep' : 'smoothstep',
+      type: e.isBackEdge ? 'loopBack' : 'smoothstep',
       animated: e.isBackEdge,
+      data: e.isBackEdge ? { color: edgeColor, routeY } : undefined,
       style: {
         stroke: edgeColor,
         strokeWidth: 1.5,
@@ -363,6 +450,45 @@ function buildCfgLayout(cfg: ControlFlowGraph): { nodes: Node[]; edges: Edge[] }
   });
 
   return { nodes, edges };
+}
+
+function buildLoopBounds(cfgNodes: CfgNode[], positions: Map<string, Point>): Map<string, LoopBounds> {
+  const nodesByLoop = new Map<string, CfgNode[]>();
+
+  cfgNodes.forEach(node => {
+    if (!node.loopId) return;
+    const loopNodes = nodesByLoop.get(node.loopId) ?? [];
+    loopNodes.push(node);
+    nodesByLoop.set(node.loopId, loopNodes);
+  });
+
+  const loopBounds = new Map<string, LoopBounds>();
+  nodesByLoop.forEach((loopNodes, loopId) => {
+    const positioned = loopNodes
+      .map(node => positions.get(node.id))
+      .filter((position): position is Point => Boolean(position));
+
+    if (positioned.length === 0) return;
+
+    const minX = Math.min(...positioned.map(position => position.x));
+    const minY = Math.min(...positioned.map(position => position.y));
+    const maxX = Math.max(...positioned.map(position => position.x + CFG_NODE_WIDTH));
+    const maxY = Math.max(...positioned.map(position => position.y + CFG_NODE_HEIGHT));
+    const x = minX - LOOP_PADDING_X;
+    const y = minY - LOOP_PADDING_Y;
+    const width = maxX - minX + LOOP_PADDING_X * 2;
+    const height = maxY - minY + LOOP_PADDING_Y * 2;
+
+    loopBounds.set(loopId, {
+      x,
+      y,
+      width,
+      height,
+      routeY: y + height - 14,
+    });
+  });
+
+  return loopBounds;
 }
 
 function truncate(s: string, max: number): string {

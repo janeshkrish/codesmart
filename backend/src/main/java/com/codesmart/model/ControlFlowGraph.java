@@ -1,6 +1,7 @@
 package com.codesmart.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Data;
 
@@ -29,10 +30,14 @@ public class ControlFlowGraph {
         private String label;
         private String sourceText;
         private SourceRange range;
+        @JsonProperty("isEntry")
         private boolean isEntry;
+        @JsonProperty("isExit")
         private boolean isExit;
         private String condition;    // for decision nodes
         private String loopVar;      // for loop nodes
+        private String loopId;
+        private String parentLoopId;
         private String loopInit;
         private String loopCondition;
         private String loopUpdate;
@@ -45,6 +50,7 @@ public class ControlFlowGraph {
         private String sourceId;
         private String targetId;
         private EdgeLabel label;  // TRUE, FALSE, NORMAL, BACK_EDGE, EXCEPTION
+        @JsonProperty("isBackEdge")
         private boolean isBackEdge;
     }
 

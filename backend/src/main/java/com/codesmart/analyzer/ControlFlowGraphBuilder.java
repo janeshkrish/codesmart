@@ -7,7 +7,9 @@ import com.codesmart.model.ControlFlowGraph;
 import com.codesmart.model.ControlFlowGraph.*;
 import com.codesmart.model.SourceRange;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -22,9 +24,13 @@ public class ControlFlowGraphBuilder {
     private final List<CfgNode> nodes = new ArrayList<>();
     private final List<CfgEdge> edges = new ArrayList<>();
     private final AtomicInteger idCounter = new AtomicInteger(0);
+    private final AtomicInteger loopCounter = new AtomicInteger(0);
+    private final Deque<LoopContext> loopStack = new ArrayDeque<>();
 
     private String entryId;
     private String exitId;
+
+    private record LoopContext(String loopId, String parentLoopId) {}
 
     public ControlFlowGraphBuilder(String methodId, String methodName) {
         this.methodId = methodId;
@@ -35,15 +41,42 @@ public class ControlFlowGraphBuilder {
         return "cfg-" + methodId + "-" + idCounter.incrementAndGet();
     }
 
-    private CfgNode addNode(CfgNodeType type, String label, com.github.javaparser.ast.Node source) {
-        CfgNode node = CfgNode.builder()
+    private String nextLoopId() {
+        return "loop-" + methodId + "-" + loopCounter.incrementAndGet();
+    }
+
+    private String currentLoopId() {
+        LoopContext context = loopStack.peek();
+        return context != null ? context.loopId() : null;
+    }
+
+    private void pushLoopContext(String loopId) {
+        loopStack.push(new LoopContext(loopId, currentLoopId()));
+    }
+
+    private void applyLoopContext(CfgNode.CfgNodeBuilder builder) {
+        LoopContext context = loopStack.peek();
+        if (context != null) {
+            builder.loopId(context.loopId())
+                    .parentLoopId(context.parentLoopId());
+        }
+    }
+
+    private CfgNode.CfgNodeBuilder nodeBuilder(CfgNodeType type, String label) {
+        CfgNode.CfgNodeBuilder builder = CfgNode.builder()
                 .id(nextId())
                 .type(type)
                 .label(label)
+                .isEntry(false)
+                .isExit(false);
+        applyLoopContext(builder);
+        return builder;
+    }
+
+    private CfgNode addNode(CfgNodeType type, String label, com.github.javaparser.ast.Node source) {
+        CfgNode node = nodeBuilder(type, label)
                 .sourceText(source != null ? source.toString() : "")
                 .range(source != null ? toRange(source) : null)
-                .isEntry(false)
-                .isExit(false)
                 .build();
         nodes.add(node);
         return node;
@@ -83,111 +116,109 @@ public class ControlFlowGraphBuilder {
     }
 
     private String processStatement(Statement stmt, String prevId, String exitId) {
+        return processStatement(stmt, prevId, exitId, EdgeLabel.NORMAL);
+    }
+
+    private String processStatement(Statement stmt, String prevId, String exitId, EdgeLabel incomingLabel) {
         if (stmt instanceof IfStmt ifStmt) {
-            return processIf(ifStmt, prevId, exitId);
+            return processIf(ifStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof ForStmt forStmt) {
-            return processFor(forStmt, prevId, exitId);
+            return processFor(forStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof WhileStmt whileStmt) {
-            return processWhile(whileStmt, prevId, exitId);
+            return processWhile(whileStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof DoStmt doStmt) {
-            return processDoWhile(doStmt, prevId, exitId);
+            return processDoWhile(doStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof ForEachStmt forEachStmt) {
-            return processForEach(forEachStmt, prevId, exitId);
+            return processForEach(forEachStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof SwitchStmt switchStmt) {
-            return processSwitch(switchStmt, prevId, exitId);
+            return processSwitch(switchStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof TryStmt tryStmt) {
-            return processTry(tryStmt, prevId, exitId);
+            return processTry(tryStmt, prevId, exitId, incomingLabel);
         } else if (stmt instanceof ReturnStmt retStmt) {
             CfgNode retNode = addNode(CfgNodeType.RETURN,
                     "return " + retStmt.getExpression().map(Object::toString).orElse(""), retStmt);
-            addEdge(prevId, retNode.getId(), EdgeLabel.NORMAL, false);
+            addEdge(prevId, retNode.getId(), incomingLabel, false);
             addEdge(retNode.getId(), exitId, EdgeLabel.NORMAL, false);
             return null; // no continuation
         } else if (stmt instanceof ThrowStmt throwStmt) {
             CfgNode throwNode = addNode(CfgNodeType.THROW,
                     "throw " + throwStmt.getExpression().toString(), throwStmt);
-            addEdge(prevId, throwNode.getId(), EdgeLabel.NORMAL, false);
+            addEdge(prevId, throwNode.getId(), incomingLabel, false);
             return null; // no continuation
         } else if (stmt instanceof BlockStmt blockStmt) {
             String last = prevId;
+            EdgeLabel nextLabel = incomingLabel;
             for (Statement s : blockStmt.getStatements()) {
                 if (last == null) break;
-                last = processStatement(s, last, exitId);
+                last = processStatement(s, last, exitId, nextLabel);
+                nextLabel = EdgeLabel.NORMAL;
             }
             return last;
         } else {
             // Generic statement
             CfgNode stmtNode = addNode(CfgNodeType.STATEMENT,
                     truncate(stmt.toString(), 50), stmt);
-            addEdge(prevId, stmtNode.getId(), EdgeLabel.NORMAL, false);
+            addEdge(prevId, stmtNode.getId(), incomingLabel, false);
             return stmtNode.getId();
         }
     }
 
-    private String processIf(IfStmt ifStmt, String prevId, String exitId) {
-        CfgNode condNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.DECISION)
-                .label("if (" + ifStmt.getCondition().toString() + ")")
+    private String processIf(IfStmt ifStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        CfgNode condNode = nodeBuilder(CfgNodeType.DECISION,
+                "if (" + ifStmt.getCondition().toString() + ")")
                 .condition(ifStmt.getCondition().toString())
                 .range(toRange(ifStmt))
                 .build();
         nodes.add(condNode);
-        addEdge(prevId, condNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, condNode.getId(), incomingLabel, false);
 
         // Join node after if-else
         CfgNode joinNode = addNode(CfgNodeType.STATEMENT, "⟨join⟩", ifStmt);
 
         // True branch
-        String trueEnd = processStatement(ifStmt.getThenStmt(), condNode.getId(), exitId);
+        String trueEnd = processStatement(ifStmt.getThenStmt(), condNode.getId(), exitId, EdgeLabel.TRUE);
         if (trueEnd != null) addEdge(trueEnd, joinNode.getId(), EdgeLabel.NORMAL, false);
         else addEdge(condNode.getId(), joinNode.getId(), EdgeLabel.TRUE, false);
 
         // False branch (else or direct to join)
         if (ifStmt.getElseStmt().isPresent()) {
-            String falseEnd = processStatement(ifStmt.getElseStmt().get(), condNode.getId(), exitId);
+            String falseEnd = processStatement(ifStmt.getElseStmt().get(), condNode.getId(), exitId, EdgeLabel.FALSE);
             if (falseEnd != null) addEdge(falseEnd, joinNode.getId(), EdgeLabel.NORMAL, false);
         } else {
             addEdge(condNode.getId(), joinNode.getId(), EdgeLabel.FALSE, false);
         }
 
-        // Fix edge labels
-        fixEdge(condNode.getId(), ifStmt.getThenStmt(), EdgeLabel.TRUE);
-
         return joinNode.getId();
     }
 
-    private String processFor(ForStmt forStmt, String prevId, String exitId) {
+    private String processFor(ForStmt forStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        String loopId = nextLoopId();
+        pushLoopContext(loopId);
+        CfgNode condNode = null;
+        try {
         // Init node
-        CfgNode initNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_INIT)
-                .label("init: " + forStmt.getInitialization().toString())
+        CfgNode initNode = nodeBuilder(CfgNodeType.LOOP_INIT,
+                "init: " + forStmt.getInitialization().toString())
                 .loopInit(forStmt.getInitialization().toString())
                 .range(toRange(forStmt))
                 .build();
         nodes.add(initNode);
-        addEdge(prevId, initNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, initNode.getId(), incomingLabel, false);
 
         // Condition node
         String condLabel = forStmt.getCompare().map(Object::toString).orElse("true");
-        CfgNode condNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_CONDITION)
-                .label("condition: " + condLabel)
+        condNode = nodeBuilder(CfgNodeType.LOOP_CONDITION, "condition: " + condLabel)
                 .condition(condLabel)
                 .build();
         nodes.add(condNode);
         addEdge(initNode.getId(), condNode.getId(), EdgeLabel.NORMAL, false);
 
         // Body
-        String bodyEnd = processStatement(forStmt.getBody(), condNode.getId(), exitId);
+        String bodyEnd = processStatement(forStmt.getBody(), condNode.getId(), exitId, EdgeLabel.TRUE);
 
         // Update node
-        CfgNode updateNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_UPDATE)
-                .label("update: " + forStmt.getUpdate().toString())
+        CfgNode updateNode = nodeBuilder(CfgNodeType.LOOP_UPDATE,
+                "update: " + forStmt.getUpdate().toString())
                 .loopUpdate(forStmt.getUpdate().toString())
                 .build();
         nodes.add(updateNode);
@@ -195,6 +226,9 @@ public class ControlFlowGraphBuilder {
 
         // Back edge from update to condition
         addEdge(updateNode.getId(), condNode.getId(), EdgeLabel.BACK_EDGE, true);
+        } finally {
+            loopStack.pop();
+        }
 
         // Exit node
         CfgNode exitNode = addNode(CfgNodeType.STATEMENT, "⟨after loop⟩", forStmt);
@@ -203,19 +237,24 @@ public class ControlFlowGraphBuilder {
         return exitNode.getId();
     }
 
-    private String processWhile(WhileStmt whileStmt, String prevId, String exitId) {
-        CfgNode condNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_CONDITION)
-                .label("while (" + whileStmt.getCondition().toString() + ")")
+    private String processWhile(WhileStmt whileStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        String loopId = nextLoopId();
+        pushLoopContext(loopId);
+        CfgNode condNode = null;
+        try {
+        condNode = nodeBuilder(CfgNodeType.LOOP_CONDITION,
+                "while (" + whileStmt.getCondition().toString() + ")")
                 .condition(whileStmt.getCondition().toString())
                 .range(toRange(whileStmt))
                 .build();
         nodes.add(condNode);
-        addEdge(prevId, condNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, condNode.getId(), incomingLabel, false);
 
-        String bodyEnd = processStatement(whileStmt.getBody(), condNode.getId(), exitId);
+        String bodyEnd = processStatement(whileStmt.getBody(), condNode.getId(), exitId, EdgeLabel.TRUE);
         if (bodyEnd != null) addEdge(bodyEnd, condNode.getId(), EdgeLabel.BACK_EDGE, true);
+        } finally {
+            loopStack.pop();
+        }
 
         CfgNode exitNode = addNode(CfgNodeType.STATEMENT, "⟨after while⟩", whileStmt);
         addEdge(condNode.getId(), exitNode.getId(), EdgeLabel.FALSE, false);
@@ -223,16 +262,18 @@ public class ControlFlowGraphBuilder {
         return exitNode.getId();
     }
 
-    private String processDoWhile(DoStmt doStmt, String prevId, String exitId) {
+    private String processDoWhile(DoStmt doStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        String loopId = nextLoopId();
+        pushLoopContext(loopId);
+        CfgNode condNode = null;
+        try {
         CfgNode bodyStart = addNode(CfgNodeType.DO_WHILE_BODY, "do {", doStmt);
-        addEdge(prevId, bodyStart.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, bodyStart.getId(), incomingLabel, false);
 
         String bodyEnd = processStatement(doStmt.getBody(), bodyStart.getId(), exitId);
 
-        CfgNode condNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_CONDITION)
-                .label("while (" + doStmt.getCondition().toString() + ")")
+        condNode = nodeBuilder(CfgNodeType.LOOP_CONDITION,
+                "while (" + doStmt.getCondition().toString() + ")")
                 .condition(doStmt.getCondition().toString())
                 .range(toRange(doStmt))
                 .build();
@@ -240,7 +281,10 @@ public class ControlFlowGraphBuilder {
         if (bodyEnd != null) addEdge(bodyEnd, condNode.getId(), EdgeLabel.NORMAL, false);
 
         // Back edge
-        addEdge(condNode.getId(), bodyStart.getId(), EdgeLabel.BACK_EDGE, true);
+        addEdge(condNode.getId(), bodyStart.getId(), EdgeLabel.TRUE, true);
+        } finally {
+            loopStack.pop();
+        }
 
         CfgNode exitNode = addNode(CfgNodeType.STATEMENT, "⟨after do-while⟩", doStmt);
         addEdge(condNode.getId(), exitNode.getId(), EdgeLabel.FALSE, false);
@@ -248,20 +292,25 @@ public class ControlFlowGraphBuilder {
         return exitNode.getId();
     }
 
-    private String processForEach(ForEachStmt forEachStmt, String prevId, String exitId) {
-        CfgNode headerNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.LOOP_CONDITION)
-                .label("for (" + forEachStmt.getVariable().toString() +
-                       " : " + forEachStmt.getIterable().toString() + ")")
+    private String processForEach(ForEachStmt forEachStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        String loopId = nextLoopId();
+        pushLoopContext(loopId);
+        CfgNode headerNode = null;
+        try {
+        headerNode = nodeBuilder(CfgNodeType.LOOP_CONDITION,
+                "for (" + forEachStmt.getVariable().toString() +
+                        " : " + forEachStmt.getIterable().toString() + ")")
                 .condition("hasNext()")
                 .range(toRange(forEachStmt))
                 .build();
         nodes.add(headerNode);
-        addEdge(prevId, headerNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, headerNode.getId(), incomingLabel, false);
 
-        String bodyEnd = processStatement(forEachStmt.getBody(), headerNode.getId(), exitId);
+        String bodyEnd = processStatement(forEachStmt.getBody(), headerNode.getId(), exitId, EdgeLabel.TRUE);
         if (bodyEnd != null) addEdge(bodyEnd, headerNode.getId(), EdgeLabel.BACK_EDGE, true);
+        } finally {
+            loopStack.pop();
+        }
 
         CfgNode exitNode = addNode(CfgNodeType.STATEMENT, "⟨after for-each⟩", forEachStmt);
         addEdge(headerNode.getId(), exitNode.getId(), EdgeLabel.FALSE, false);
@@ -269,16 +318,14 @@ public class ControlFlowGraphBuilder {
         return exitNode.getId();
     }
 
-    private String processSwitch(SwitchStmt switchStmt, String prevId, String exitId) {
-        CfgNode switchNode = CfgNode.builder()
-                .id(nextId())
-                .type(CfgNodeType.SWITCH_HEADER)
-                .label("switch (" + switchStmt.getSelector().toString() + ")")
+    private String processSwitch(SwitchStmt switchStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
+        CfgNode switchNode = nodeBuilder(CfgNodeType.SWITCH_HEADER,
+                "switch (" + switchStmt.getSelector().toString() + ")")
                 .condition(switchStmt.getSelector().toString())
                 .range(toRange(switchStmt))
                 .build();
         nodes.add(switchNode);
-        addEdge(prevId, switchNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, switchNode.getId(), incomingLabel, false);
 
         CfgNode joinNode = addNode(CfgNodeType.STATEMENT, "⟨after switch⟩", switchStmt);
 
@@ -300,9 +347,9 @@ public class ControlFlowGraphBuilder {
         return joinNode.getId();
     }
 
-    private String processTry(TryStmt tryStmt, String prevId, String exitId) {
+    private String processTry(TryStmt tryStmt, String prevId, String exitId, EdgeLabel incomingLabel) {
         CfgNode tryNode = addNode(CfgNodeType.TRY_BLOCK, "try {", tryStmt);
-        addEdge(prevId, tryNode.getId(), EdgeLabel.NORMAL, false);
+        addEdge(prevId, tryNode.getId(), incomingLabel, false);
 
         CfgNode joinNode = addNode(CfgNodeType.STATEMENT, "⟨after try⟩", tryStmt);
 
@@ -324,10 +371,6 @@ public class ControlFlowGraphBuilder {
         });
 
         return joinNode.getId();
-    }
-
-    private void fixEdge(String fromId, com.github.javaparser.ast.Node targetNode, EdgeLabel label) {
-        // Adjust edge labels - for simplicity just add correct labeled edges already done above
     }
 
     public ControlFlowGraph build() {
