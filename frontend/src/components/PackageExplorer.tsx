@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { ChevronRight, ChevronDown, FileCode, FolderOpen, Folder, Plus, RefreshCw } from 'lucide-react';
+import { ChevronRight, ChevronDown, FileCode, FolderOpen, Folder, Plus, RefreshCw, FolderOpenDot, Save } from 'lucide-react';
 import { useIdeStore } from '../store/ideStore';
 import type { FileNode } from '../types';
+import { createJavaClass, removeFileNode, renameJavaFile } from '../utils/fileTree';
 
 // Let's add a global window type for electron API
 declare global {
   interface Window {
     electronAPI?: {
-      openFile: () => Promise<string | null>;
-      saveFile: (content: string) => Promise<boolean>;
+      openJavaFile: () => Promise<{ path: string; name: string; content: string } | null>;
+      saveJavaFile: (payload: { path?: string; content: string }) => Promise<{ path: string; name: string } | null>;
     }
   }
 }
@@ -35,7 +36,7 @@ const SAMPLE_FILES: FileNode[] = [
 ];
 
 export function PackageExplorer() {
-  const { activeFile, setActiveFile, setSourceCode } = useIdeStore();
+  const { activeFile, setActiveFile, setSourceCode, sourceCode } = useIdeStore();
   const [files, setFiles] = useState<FileNode[]>(SAMPLE_FILES);
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, node: FileNode | null } | null>(null);
@@ -62,13 +63,9 @@ export function PackageExplorer() {
   };
 
   const handleNewFile = () => {
-    const newFile: FileNode = {
-      id: 'new-' + Date.now(),
-      name: 'NewFile.java',
-      path: '/src/main/java/NewFile.java',
-      type: 'file',
-      language: 'java'
-    };
+    const requestedName = window.prompt('Java class name', 'NewFile');
+    if (!requestedName?.trim() || !/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.java)?$/.test(requestedName.trim())) return;
+    const { node: newFile, content } = createJavaClass(requestedName);
     
     // Simple mock insertion into first folder
     const insert = (nodes: FileNode[]): FileNode[] => {
@@ -81,23 +78,51 @@ export function PackageExplorer() {
       return nodes;
     };
     
-    setFiles(insert(files));
+    setFiles(current => insert(current));
     setActiveFile(newFile);
-    setSourceCode('public class NewFile {\n    \n}');
+    setSourceCode(content);
   };
 
   const handleDelete = (id: string) => {
-    const removeNode = (nodes: FileNode[]): FileNode[] => {
-      return nodes.filter(n => n.id !== id).map(n => ({
-        ...n,
-        children: n.children ? removeNode(n.children) : undefined
-      }));
-    };
-    setFiles(removeNode(files));
+    setFiles(current => removeFileNode(current, id));
     if (activeFile?.id === id) {
       setActiveFile(null);
       setSourceCode('');
     }
+  };
+
+  const handleRename = (node: FileNode) => {
+    if (node.type !== 'file') return;
+    const requestedName = window.prompt('Rename Java file', node.name.replace(/\.java$/i, ''));
+    if (!requestedName?.trim() || !/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.java)?$/.test(requestedName.trim())) return;
+    setFiles(current => renameJavaFile(current, node.id, requestedName));
+    if (activeFile?.id === node.id) {
+      const renamed = renameJavaFile([node], node.id, requestedName)[0];
+      setActiveFile(renamed);
+    }
+  };
+
+  const handleSelectFile = (node: FileNode) => {
+    setActiveFile(node);
+    if (node.path.startsWith('/src/')) {
+      const className = node.name.replace(/\.java$/i, '');
+      setSourceCode(`public class ${className} {\n    \n}\n`);
+    }
+  };
+
+  const handleOpen = async () => {
+    const opened = await window.electronAPI?.openJavaFile();
+    if (!opened) return;
+    const file: FileNode = { id: opened.path, name: opened.name, path: opened.path, type: 'file', language: 'java' };
+    setFiles(current => current.some(node => node.id === file.id) ? current : [...current, file]);
+    setActiveFile(file);
+    setSourceCode(opened.content);
+  };
+
+  const handleSave = async () => {
+    const saved = await window.electronAPI?.saveJavaFile({ path: activeFile?.path.startsWith('/') ? undefined : activeFile?.path, content: sourceCode });
+    if (!saved) return;
+    setActiveFile({ id: saved.path, name: saved.name, path: saved.path, type: 'file', language: 'java' });
   };
 
   const renderNode = (node: FileNode, depth = 0): React.ReactNode => {
@@ -142,7 +167,7 @@ export function PackageExplorer() {
           borderLeft: isActive ? '2px solid #7c3aed' : '2px solid transparent',
           color: isActive ? '#e6edf3' : '#8b949e',
         }}
-        onClick={() => setActiveFile(node)}
+        onClick={() => handleSelectFile(node)}
         onContextMenu={(e) => handleContextMenu(e, node)}
       >
         <FileCode size={13} style={{ color: '#06b6d4', flexShrink: 0 }} />
@@ -169,6 +194,12 @@ export function PackageExplorer() {
           <span className="panel-title">Explorer</span>
         </div>
         <div className="flex gap-1">
+          <button className="btn btn-ghost btn-icon" title="Open Java file" style={{ padding: '2px' }} onClick={handleOpen}>
+            <FolderOpenDot size={11} />
+          </button>
+          <button className="btn btn-ghost btn-icon" title="Save (Ctrl+S)" style={{ padding: '2px' }} onClick={handleSave}>
+            <Save size={11} />
+          </button>
           <button className="btn btn-ghost btn-icon" title="New File" style={{ padding: '2px' }} onClick={handleNewFile}>
             <Plus size={11} />
           </button>
@@ -209,9 +240,13 @@ export function PackageExplorer() {
           </div>
           {contextMenu.node && (
             <>
-              <div className="context-menu-item" onClick={() => setContextMenu(null)}>Rename</div>
+              <div className="context-menu-item" onClick={() => { handleRename(contextMenu.node!); setContextMenu(null); }}>Rename</div>
               <div className="context-menu-separator"></div>
-              <div className="context-menu-item danger" onClick={() => { handleDelete(contextMenu.node!.id); setContextMenu(null); }}>
+              <div className="context-menu-item danger" onClick={() => {
+                const node = contextMenu.node!;
+                if (window.confirm(`Remove ${node.name} from the CodeSmart project tree? This does not delete the disk file.`)) handleDelete(node.id);
+                setContextMenu(null);
+              }}>
                 Delete
               </div>
             </>

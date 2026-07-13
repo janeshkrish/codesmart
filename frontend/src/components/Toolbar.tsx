@@ -1,113 +1,38 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Play, StepForward, StepBack, Pause, RotateCcw, Square,
   Zap, Layout, BookOpen, Settings, GitBranch, Bug,
   Wifi, WifiOff, ArrowDownToLine, ArrowRightToLine, ArrowUpFromLine, PlayCircle
 } from 'lucide-react';
 import { useIdeStore } from '../store/ideStore';
-import { apiService } from '../services/apiService';
+import { useExecution } from '../hooks/useExecution';
 
 export function Toolbar() {
+  const { wsConnected, isExecuting, executionPaused } = useIdeStore();
+
   const {
-    wsConnected, executionId, isExecuting,
-    setExecutionId, setIsExecuting, addExecutionStep,
-    clearConsoleOutput, sourceCode, setActiveBottomTab,
-    setCurrentExecutionLine
-  } = useIdeStore();
+    run, step, stepInto, stepOver, stepOut, stepBack,
+    continueExecution, pause, resume, stop, restart,
+  } = useExecution();
 
-  const handleRun = async () => {
-    if (isExecuting) return;
-    clearConsoleOutput();
-    setIsExecuting(true);
-    try {
-      const { executionId: id } = await apiService.startExecution(sourceCode, 'Main');
-      setExecutionId(id);
-      // Subscribe to execution events
-      apiService.subscribeToExecution(id, (step) => {
-        addExecutionStep(step);
-        if (step.type === 'FINISHED' || step.type === 'ERROR') {
-          setIsExecuting(false);
-        }
-      });
-      await apiService.runToCompletion(id);
-      setActiveBottomTab('debugger');
-    } catch (e) {
-      console.error('Run failed:', e);
-      setIsExecuting(false);
-    }
-  };
+  // ============================================================
+  // Keyboard Shortcuts
+  // ============================================================
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F5') { e.preventDefault(); run(); }
+      if (e.key === 'F6') { e.preventDefault(); step(); }
+      if (e.key === 'F7') { e.preventDefault(); stepInto(); }
+      if (e.key === 'F8' && !e.shiftKey) { e.preventDefault(); stepOver(); }
+      if (e.key === 'F8' && e.shiftKey) { e.preventDefault(); stepOut(); }
+      if (e.key === 'F9') { e.preventDefault(); continueExecution(); }
+      if (e.key === 'F10') { e.preventDefault(); restart(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
 
-  const handleStep = async () => {
-    if (!executionId) {
-      // Start session first
-      const { executionId: id } = await apiService.startExecution(sourceCode, 'Main');
-      setExecutionId(id);
-      setIsExecuting(true);
-    }
-    if (executionId) {
-      const { step } = await apiService.stepForward(executionId);
-      addExecutionStep(step);
-      if (step.currentLine) setCurrentExecutionLine(step.currentLine);
-    }
-  };
-
-  const handleStepInto = async () => {
-    if (!executionId) return;
-    const { step } = await apiService.stepInto(executionId);
-    addExecutionStep(step);
-    if (step.currentLine) setCurrentExecutionLine(step.currentLine);
-  };
-
-  const handleStepOver = async () => {
-    if (!executionId) return;
-    const { step } = await apiService.stepOver(executionId);
-    addExecutionStep(step);
-    if (step.currentLine) setCurrentExecutionLine(step.currentLine);
-  };
-
-  const handleStepOut = async () => {
-    if (!executionId) return;
-    const { step } = await apiService.stepOut(executionId);
-    addExecutionStep(step);
-    if (step.currentLine) setCurrentExecutionLine(step.currentLine);
-  };
-
-  const handleContinue = async () => {
-    if (!executionId) return;
-    await apiService.continueExecution(executionId);
-  };
-
-  const handleStepBack = async () => {
-    if (!executionId) return;
-    const { step } = await apiService.stepBackward(executionId);
-    addExecutionStep(step);
-  };
-
-  const handlePause = async () => {
-    if (!executionId) return;
-    await apiService.pauseExecution(executionId);
-    setIsExecuting(false);
-  };
-
-  const handleResume = async () => {
-    if (!executionId) return;
-    await apiService.resumeExecution(executionId);
-    setIsExecuting(true);
-  };
-
-  const handleStop = async () => {
-    if (!executionId) return;
-    await apiService.stopExecution(executionId);
-    setExecutionId(null);
-    setIsExecuting(false);
-    setCurrentExecutionLine(null);
-  };
-
-  const handleRestart = async () => {
-    if (!executionId) return;
-    await apiService.restartExecution(executionId);
-    clearConsoleOutput();
-  };
+  const hasEngine = isExecuting;
 
   return (
     <div
@@ -120,11 +45,13 @@ export function Toolbar() {
         padding: '0 12px',
         gap: '8px',
         flexShrink: 0,
+        minWidth: 0,
+        overflowX: 'auto',
         userSelect: 'none',
       }}
     >
       {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '16px', flexShrink: 0 }}>
         <div style={{
           width: '28px', height: '28px', borderRadius: '8px',
           background: 'linear-gradient(135deg, #7c3aed, #06b6d4)',
@@ -145,86 +72,84 @@ export function Toolbar() {
       <div style={{ width: '1px', height: '24px', background: '#30363d', margin: '0 4px' }} />
 
       {/* Execution Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
         <ToolbarButton
           icon={<Play size={14} />}
           label="Run"
-          onClick={handleRun}
+          onClick={run}
           disabled={isExecuting}
           variant="success"
-          tooltip="Run program"
+          tooltip="Run program (F5)"
         />
         <ToolbarButton
           icon={<StepForward size={14} />}
           label="Step"
-          onClick={handleStep}
+          onClick={step}
           tooltip="Step Forward (F6)"
         />
         <div className="toolbar-group">
           <ToolbarButton
             icon={<ArrowDownToLine size={14} />}
             label="Into"
-            onClick={handleStepInto}
-            disabled={!executionId}
+            onClick={stepInto}
             tooltip="Step Into (F7)"
           />
           <ToolbarButton
             icon={<ArrowRightToLine size={14} />}
             label="Over"
-            onClick={handleStepOver}
-            disabled={!executionId}
+            onClick={stepOver}
             tooltip="Step Over (F8)"
           />
           <ToolbarButton
             icon={<ArrowUpFromLine size={14} />}
             label="Out"
-            onClick={handleStepOut}
-            disabled={!executionId}
+            onClick={stepOut}
+            disabled={!hasEngine}
             tooltip="Step Out (Shift+F8)"
           />
         </div>
         <ToolbarButton
           icon={<StepBack size={14} />}
           label="Back"
-          onClick={handleStepBack}
-          disabled={!executionId}
+          onClick={stepBack}
+          disabled={!hasEngine}
           tooltip="Step Backward"
         />
         <div className="toolbar-group">
           <ToolbarButton
             icon={<Pause size={14} />}
             label="Pause"
-            onClick={handlePause}
-            disabled={!isExecuting || !executionId}
+            onClick={pause}
+            disabled={!isExecuting || executionPaused}
             tooltip="Pause Execution"
           />
           <ToolbarButton
             icon={<PlayCircle size={14} />}
             label="Resume"
-            onClick={handleResume}
-            disabled={isExecuting || !executionId}
+            onClick={resume}
+            disabled={!executionPaused}
             tooltip="Resume Execution (F9)"
           />
           <ToolbarButton
             icon={<Play size={14} style={{ color: '#d29922' }} />}
             label="Continue"
-            onClick={handleContinue}
-            disabled={!executionId}
-            tooltip="Run to Next Breakpoint"
+            onClick={continueExecution}
+            disabled={!hasEngine}
+            tooltip="Run to Next Breakpoint (F9)"
           />
         </div>
         <ToolbarButton
           icon={<RotateCcw size={14} />}
           label="Restart"
-          onClick={handleRestart}
-          disabled={!executionId}
-          tooltip="Restart"
+          onClick={restart}
+          disabled={!hasEngine}
+          tooltip="Restart (F10)"
         />
         <ToolbarButton
           icon={<Square size={14} />}
           label="Stop"
-          onClick={handleStop}
-          disabled={!executionId}
+          onClick={stop}
+          disabled={!hasEngine}
           variant="danger"
           tooltip="Stop Execution"
         />
@@ -237,10 +162,23 @@ export function Toolbar() {
       <VisualizationShortcuts />
 
       {/* Spacer */}
-      <div style={{ flex: 1 }} />
+      <div style={{ flex: 1, minWidth: '12px' }} />
 
       {/* Status indicators */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        {/* Execution status */}
+        {isExecuting && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px',
+            fontSize: '11px', color: executionPaused ? '#d29922' : '#3fb950' }}>
+            <div style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: executionPaused ? '#d29922' : '#3fb950',
+              animation: executionPaused ? 'none' : 'pulse-glow 1.5s ease infinite',
+            }} />
+            {executionPaused ? 'Paused' : 'Running'}
+          </div>
+        )}
+
         {/* WS Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px',
           fontSize: '11px', color: wsConnected ? '#3fb950' : '#8b949e' }}>
@@ -294,7 +232,7 @@ function ToolbarButton({ icon, label, onClick, disabled, variant = 'default', to
       }}
     >
       {icon}
-      <span>{label}</span>
+      <span className="cs-toolbar-label">{label}</span>
     </button>
   );
 }
@@ -312,6 +250,11 @@ function VisualizationShortcuts() {
     { id: 'flowchart' as const, icon: <Zap size={13} />, label: 'Flow' },
     { id: 'callgraph' as const, icon: <Bug size={13} />, label: 'Calls' },
     { id: 'classdiagram' as const, icon: <BookOpen size={13} />, label: 'UML' },
+    { id: 'collections' as const, icon: <Layout size={13} />, label: 'Collections' },
+    { id: 'looptrace' as const, icon: <StepForward size={13} />, label: 'Loops' },
+    { id: 'recursiontree' as const, icon: <GitBranch size={13} />, label: 'Recursion' },
+    { id: 'dptable' as const, icon: <Layout size={13} />, label: 'DP' },
+    { id: 'memoization' as const, icon: <Zap size={13} />, label: 'Memo' },
   ];
 
   return (
@@ -331,7 +274,7 @@ function VisualizationShortcuts() {
           }}
         >
           {tab.icon}
-          <span>{tab.label}</span>
+          <span className="cs-visualization-label">{tab.label}</span>
         </button>
       ))}
     </div>

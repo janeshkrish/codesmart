@@ -92,8 +92,12 @@ export function AstPanel() {
     return buildFlowLayout(analysisResult.astRoot);
   }, [analysisResult?.astRoot]);
 
-  const [flowNodes, , onNodesChange] = useNodesState(nodes);
-  const [flowEdges, , onEdgesChange] = useEdgesState(edges);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(nodes);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(edges);
+
+  // Sync ReactFlow internal state when computed data changes
+  React.useEffect(() => { setFlowNodes(nodes); }, [nodes, setFlowNodes]);
+  React.useEffect(() => { setFlowEdges(edges); }, [edges, setFlowEdges]);
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     selectAstNode(node.id);

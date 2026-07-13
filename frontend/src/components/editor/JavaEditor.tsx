@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import MonacoEditor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import type * as MonacoTypes from 'monaco-editor';
 import { useIdeStore } from '../../store/ideStore';
+import { organizeJavaImports, replaceIdentifier } from '../../utils/javaEditorCommands';
 
 export function JavaEditor() {
   const {
@@ -78,6 +79,65 @@ export function JavaEditor() {
 
     // Add Java hover provider (for types/explanations)
     registerJavaHoverProvider(monaco, editorRef, monacoRef);
+
+    editor.addAction({
+      id: 'codesmart.save-java-file', label: 'CodeSmart: Save Java File',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: async () => {
+        const state = useIdeStore.getState();
+        const saved = await window.electronAPI?.saveJavaFile({ path: state.activeFile?.path.startsWith('/') ? undefined : state.activeFile?.path, content: state.sourceCode });
+        if (saved) state.setActiveFile({ id: saved.path, name: saved.name, path: saved.path, type: 'file', language: 'java' });
+      },
+    });
+
+    editor.addAction({
+      id: 'codesmart.format-java-document',
+      label: 'CodeSmart: Format Java Document',
+      keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+      run: () => editor.getAction('editor.action.formatDocument')?.run(),
+    });
+
+    editor.addAction({
+      id: 'codesmart.go-to-line',
+      label: 'CodeSmart: Go to Line',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyG],
+      run: () => editor.getAction('editor.action.gotoLine')?.run(),
+    });
+
+    editor.addAction({
+      id: 'codesmart.find-in-file',
+      label: 'CodeSmart: Find in File',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
+      run: () => editor.getAction('actions.find')?.run(),
+    });
+
+    editor.addAction({
+      id: 'codesmart.find-in-project',
+      label: 'CodeSmart: Find in Project',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
+      run: () => useIdeStore.getState().setActiveBottomTab('search'),
+    });
+
+    editor.addAction({
+      id: 'codesmart.organize-java-imports',
+      label: 'CodeSmart: Organize Java Imports',
+      run: () => replaceEditorContents(editor, organizeJavaImports(editor.getValue())),
+    });
+
+    editor.addAction({
+      id: 'codesmart.rename-java-identifier',
+      label: 'CodeSmart: Rename Identifier in File',
+      keybindings: [monaco.KeyCode.F2],
+      run: () => {
+        const position = editor.getPosition();
+        const word = position ? editor.getModel()?.getWordAtPosition(position)?.word : undefined;
+        if (!word) return;
+        const replacement = window.prompt(`Rename ${word} in this file`, word)?.trim();
+        if (replacement && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(replacement)) {
+          replaceEditorContents(editor, replaceIdentifier(editor.getValue(), word, replacement));
+        }
+      },
+    });
 
     // Initial decoration
     updateDecorations(editor, monaco, analysisResult, useIdeStore.getState().breakpoints, useIdeStore.getState().currentExecutionLine);
@@ -160,6 +220,10 @@ export function JavaEditor() {
       </div>
     </div>
   );
+}
+
+function replaceEditorContents(editor: MonacoTypes.editor.IStandaloneCodeEditor, nextValue: string): void {
+  if (nextValue !== editor.getValue()) editor.setValue(nextValue);
 }
 
 // ============================================================

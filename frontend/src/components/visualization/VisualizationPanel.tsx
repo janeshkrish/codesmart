@@ -7,6 +7,10 @@ import { ClassDiagramPanel } from './ClassDiagramPanel';
 import { CollectionsPanel } from './CollectionsPanel';
 import { StreamPipelinePanel } from './StreamPipelinePanel';
 import { ScopePanel } from './ScopePanel';
+import { LoopTracePanel } from './LoopTracePanel';
+import { RecursionTreePanel } from './RecursionTreePanel';
+import { DpTablePanel } from './DpTablePanel';
+import { MemoizationPanel } from './MemoizationPanel';
 import type { VisualizationTab } from '../../types';
 
 const TABS: { id: VisualizationTab; label: string; icon: string }[] = [
@@ -18,6 +22,10 @@ const TABS: { id: VisualizationTab; label: string; icon: string }[] = [
   { id: 'collections', label: 'Collections', icon: '📦' },
   { id: 'streams', label: 'Streams', icon: '🌊' },
   { id: 'scope', label: 'Scopes', icon: '🔭' },
+  { id: 'looptrace', label: 'Loops', icon: '🔁' },
+  { id: 'recursiontree', label: 'Recursion', icon: '🌲' },
+  { id: 'dptable', label: 'DP Table', icon: '▦' },
+  { id: 'memoization', label: 'Memo', icon: '⇥' },
 ];
 
 export function VisualizationPanel() {
@@ -25,15 +33,19 @@ export function VisualizationPanel() {
 
   const renderPanel = () => {
     switch (activeVisualizationTab) {
-      case 'memory':      return <MemoryPanel />;
-      case 'ast':         return <AstPanel />;
-      case 'flowchart':   return <FlowchartPanel />;
-      case 'callgraph':   return <CallGraphPanel />;
-      case 'classdiagram':return <ClassDiagramPanel />;
-      case 'collections': return <CollectionsPanel />;
-      case 'streams':     return <StreamPipelinePanel />;
-      case 'scope':       return <ScopePanel />;
-      default:            return <MemoryPanel />;
+      case 'memory':       return <MemoryPanel />;
+      case 'ast':          return <AstPanel />;
+      case 'flowchart':    return <FlowchartPanel />;
+      case 'callgraph':    return <CallGraphPanel />;
+      case 'classdiagram': return <ClassDiagramPanel />;
+      case 'collections':  return <CollectionsPanel />;
+      case 'streams':      return <StreamPipelinePanel />;
+      case 'scope':        return <ScopePanel />;
+      case 'looptrace':    return <LoopTracePanel />;
+      case 'recursiontree':return <RecursionTreePanel />;
+      case 'dptable':      return <DpTablePanel />;
+      case 'memoization':  return <MemoizationPanel />;
+      default:             return <MemoryPanel />;
     }
   };
 
@@ -46,7 +58,6 @@ export function VisualizationPanel() {
       borderLeft: '1px solid #21262d',
       overflow: 'hidden',
     }}>
-      {/* Tab Bar */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -83,7 +94,6 @@ export function VisualizationPanel() {
           </button>
         ))}
 
-        {/* Analyzing indicator */}
         {isAnalyzing && (
           <div style={{
             marginLeft: 'auto',
@@ -104,7 +114,6 @@ export function VisualizationPanel() {
         )}
       </div>
 
-      {/* Panel Content */}
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {renderPanel()}
       </div>

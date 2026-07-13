@@ -438,9 +438,10 @@ export interface StepResult {
 
 export type VisualizationTab =
   | 'memory' | 'ast' | 'flowchart' | 'callgraph'
-  | 'classdiagram' | 'collections' | 'streams' | 'scope' | 'threads';
+  | 'classdiagram' | 'collections' | 'streams' | 'scope' | 'threads'
+  | 'looptrace' | 'recursiontree' | 'dptable' | 'memoization';
 
-export type BottomTab = 'symtable' | 'problems' | 'explanation' | 'debugger' | 'search';
+export type BottomTab = 'symtable' | 'problems' | 'explanation' | 'debugger' | 'search' | 'timeline';
 
 export interface FileNode {
   id: string;

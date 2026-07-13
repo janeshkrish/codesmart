@@ -2,16 +2,87 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useIdeStore } from '../../store/ideStore';
 
+// ============================================================
+// Enhanced Call Stack Panel
+// Shows execution-time stack frames with return values,
+// local variable preview, and animated push/pop transitions.
+// ============================================================
+
 export function CallStackPanel() {
-  const { currentStepResult, analysisResult, highlightRange } = useIdeStore();
+  const { currentStepResult, analysisResult, highlightRange, executionSnapshot } = useIdeStore();
 
-  // During execution: show actual call stack from step result
+  // During execution: prefer snapshot call stack (richer) → step result frames → analysis frames
+  const snapshotFrames = executionSnapshot?.callStack;
   const executionFrames = currentStepResult?.stackFrames;
-
-  // During analysis: show inferred stack frames from memory model
   const analysisFrames = analysisResult?.memoryModel?.stackFrames;
 
-  const frames = executionFrames ?? analysisFrames ?? [];
+  // Build display frames from the best available source
+  const frames = React.useMemo(() => {
+    if (snapshotFrames && snapshotFrames.length > 0) {
+      // Convert StackFrameState to display format
+      return snapshotFrames.map(f => ({
+        id: f.id,
+        methodName: f.methodName,
+        className: f.className,
+        depth: f.depth,
+        isActive: f.isActive,
+        callLine: f.callLine,
+        returnValue: f.returnValue,
+        localVariables: Array.from(f.localVariables.values()).map(v => ({
+          id: `${f.id}-${v.name}`,
+          name: v.name,
+          type: v.type,
+          staticValue: v.value != null ? String(v.value) : undefined,
+        })),
+        parameters: Array.from(f.parameters.values()).map(v => ({
+          id: `${f.id}-param-${v.name}`,
+          name: v.name,
+          type: v.type,
+          staticValue: v.value != null ? String(v.value) : undefined,
+        })),
+        range: { startLine: f.callLine, startColumn: 1, endLine: f.callLine, endColumn: 1 },
+      }));
+    }
+    if (executionFrames && executionFrames.length > 0) {
+      return executionFrames.map(f => ({
+        id: f.id,
+        methodName: f.methodName,
+        className: f.className,
+        depth: f.depth,
+        isActive: f.isActive,
+        callLine: f.range?.startLine,
+        returnValue: f.returnValue?.staticValue,
+        localVariables: f.localVariables.map(v => ({
+          id: v.id,
+          name: v.name,
+          type: v.type,
+          staticValue: v.staticValue,
+        })),
+        parameters: [],
+        range: f.range,
+      }));
+    }
+    if (analysisFrames && analysisFrames.length > 0) {
+      return analysisFrames.map(f => ({
+        id: f.id,
+        methodName: f.methodName,
+        className: f.className,
+        depth: f.depth,
+        isActive: f.isActive,
+        callLine: f.range?.startLine,
+        returnValue: f.returnValue?.staticValue,
+        localVariables: f.localVariables.map(v => ({
+          id: v.id,
+          name: v.name,
+          type: v.type,
+          staticValue: v.staticValue,
+        })),
+        parameters: [],
+        range: f.range,
+      }));
+    }
+    return [];
+  }, [snapshotFrames, executionFrames, analysisFrames]);
 
   return (
     <div style={{
@@ -35,6 +106,8 @@ export function CallStackPanel() {
           <AnimatePresence>
             {[...frames].reverse().map((frame, idx) => {
               const isTop = idx === 0;
+              const allVars = [...frame.parameters, ...frame.localVariables];
+
               return (
                 <motion.div
                   key={frame.id}
@@ -52,6 +125,7 @@ export function CallStackPanel() {
                     transition: 'background 0.15s',
                   }}
                 >
+                  {/* Method name + status */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '10px', color: isTop ? '#7c3aed' : '#444c56' }}>
                       {isTop ? '▶' : '○'}
@@ -60,7 +134,7 @@ export function CallStackPanel() {
                       fontSize: '12px', fontFamily: 'JetBrains Mono, monospace',
                       fontWeight: 700, color: isTop ? '#e6edf3' : '#8b949e',
                     }}>
-                      {frame.methodName}()
+                      {frame.className ? `${frame.className}.` : ''}{frame.methodName}()
                     </span>
                     {isTop && (
                       <span style={{ fontSize: '9px', color: '#7c3aed',
@@ -68,20 +142,40 @@ export function CallStackPanel() {
                         current
                       </span>
                     )}
+                    {/* Depth indicator */}
+                    <span style={{ marginLeft: 'auto', fontSize: '9px', color: '#444c56' }}>
+                      depth {frame.depth}
+                    </span>
                   </div>
 
-                  {frame.range && (
+                  {/* Call line */}
+                  {frame.callLine && (
                     <div style={{ fontSize: '10px', color: '#6e7681', marginTop: '2px',
                       fontFamily: 'monospace', marginLeft: '16px' }}>
-                      Line {frame.range.startLine}
+                      Line {frame.callLine}
+                    </div>
+                  )}
+
+                  {/* Return value */}
+                  {frame.returnValue !== undefined && frame.returnValue !== null && (
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      marginTop: '4px', marginLeft: '16px', padding: '2px 6px',
+                      background: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.25)',
+                      borderRadius: '3px', fontSize: '10px',
+                    }}>
+                      <span style={{ color: '#3fb950', fontWeight: 600 }}>return</span>
+                      <span style={{ color: '#e6edf3', fontFamily: 'monospace' }}>
+                        {String(frame.returnValue)}
+                      </span>
                     </div>
                   )}
 
                   {/* Local variable preview */}
-                  {frame.localVariables.length > 0 && (
+                  {allVars.length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '5px',
                       marginLeft: '16px' }}>
-                      {frame.localVariables.slice(0, 3).map(v => (
+                      {allVars.slice(0, 4).map(v => (
                         <div key={v.id} style={{
                           fontSize: '10px', fontFamily: 'monospace',
                           color: '#6e7681', background: '#161b22',
@@ -92,9 +186,9 @@ export function CallStackPanel() {
                           {v.staticValue && <span style={{ color: '#3fb950' }}>={v.staticValue}</span>}
                         </div>
                       ))}
-                      {frame.localVariables.length > 3 && (
+                      {allVars.length > 4 && (
                         <span style={{ fontSize: '10px', color: '#444c56' }}>
-                          +{frame.localVariables.length - 3}
+                          +{allVars.length - 4}
                         </span>
                       )}
                     </div>

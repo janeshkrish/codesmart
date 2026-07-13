@@ -4,10 +4,11 @@ import ReactFlow, {
   Background, Controls, BackgroundVariant,
   Handle, Position, MarkerType, useNodesState, useEdgesState
 } from 'reactflow';
+import dagre from '@dagrejs/dagre';
 import { useIdeStore } from '../../store/ideStore';
 
 // ============================================================
-// Call Graph Panel
+// Call Graph Panel — Dagre Layout
 // Shows method → method call relationships
 // Recursion displayed as self-loops
 // ============================================================
@@ -57,25 +58,44 @@ function CallGraphNodeComponent({ data }: { data: {
 
 const nodeTypes: NodeTypes = { callNode: CallGraphNodeComponent };
 
-export function CallGraphPanel() {
-  const { analysisResult } = useIdeStore();
-  const callGraph = analysisResult?.callGraph;
+// ============================================================
+// Dagre layout for call graphs
+// ============================================================
+function buildCallGraphLayout(callGraph: { nodes: any[]; edges: any[] }) {
+  const NODE_W = 160;
+  const NODE_H = 80;
 
-  const { nodes, edges } = useMemo(() => {
-    if (!callGraph?.nodes?.length) return { nodes: [], edges: [] };
+  const graph = new dagre.graphlib.Graph();
+  graph.setDefaultEdgeLabel(() => ({}));
+  graph.setGraph({
+    rankdir: 'TB',
+    ranksep: 100,
+    nodesep: 60,
+    marginx: 40,
+    marginy: 40,
+  });
 
-    const NODE_W = 160;
-    const NODE_H = 80;
-    const H_GAP = 80;
-    const V_GAP = 120;
+  callGraph.nodes.forEach(n => {
+    graph.setNode(n.id, { width: NODE_W, height: NODE_H });
+  });
 
-    // Lay out in a grid
-    const flowNodes: Node[] = callGraph.nodes.map((n, i) => ({
+  // Only add non-self-loop edges for layout
+  callGraph.edges.forEach(e => {
+    if (e.callerId !== e.calleeId) {
+      graph.setEdge(e.callerId, e.calleeId);
+    }
+  });
+
+  dagre.layout(graph);
+
+  const flowNodes: Node[] = callGraph.nodes.map(n => {
+    const layoutNode = graph.node(n.id);
+    return {
       id: n.id,
       type: 'callNode',
       position: {
-        x: (i % 3) * (NODE_W + H_GAP),
-        y: Math.floor(i / 3) * (NODE_H + V_GAP),
+        x: layoutNode.x - NODE_W / 2,
+        y: layoutNode.y - NODE_H / 2,
       },
       data: {
         methodName: n.methodName,
@@ -85,29 +105,43 @@ export function CallGraphPanel() {
         isExternal: n.isExternal,
         signature: n.signature,
       },
-    }));
+    };
+  });
 
-    const flowEdges: Edge[] = callGraph.edges.map(e => ({
-      id: e.id,
-      source: e.callerId,
-      target: e.calleeId,
-      type: e.isRecursiveCall ? 'smoothstep' : 'smoothstep',
-      animated: e.isRecursiveCall,
-      style: {
-        stroke: e.isRecursiveCall ? '#e879f9' : '#06b6d4',
-        strokeWidth: e.isRecursiveCall ? 2 : 1.5,
-        strokeDasharray: e.isRecursiveCall ? '6 3' : undefined,
-      },
-      markerEnd: { type: MarkerType.ArrowClosed, color: e.isRecursiveCall ? '#e879f9' : '#06b6d4' },
-      label: e.isRecursiveCall ? 'recursive' : undefined,
-      labelStyle: { fill: '#e879f9', fontSize: 10 },
-    }));
+  const flowEdges: Edge[] = callGraph.edges.map(e => ({
+    id: e.id,
+    source: e.callerId,
+    target: e.calleeId,
+    type: 'smoothstep',
+    animated: e.isRecursiveCall,
+    style: {
+      stroke: e.isRecursiveCall ? '#e879f9' : '#06b6d4',
+      strokeWidth: e.isRecursiveCall ? 2 : 1.5,
+      strokeDasharray: e.isRecursiveCall ? '6 3' : undefined,
+    },
+    markerEnd: { type: MarkerType.ArrowClosed, color: e.isRecursiveCall ? '#e879f9' : '#06b6d4' },
+    label: e.isRecursiveCall ? 'recursive' : undefined,
+    labelStyle: { fill: '#e879f9', fontSize: 10 },
+  }));
 
-    return { nodes: flowNodes, edges: flowEdges };
+  return { nodes: flowNodes, edges: flowEdges };
+}
+
+export function CallGraphPanel() {
+  const { analysisResult } = useIdeStore();
+  const callGraph = analysisResult?.callGraph;
+
+  const { nodes, edges } = useMemo(() => {
+    if (!callGraph?.nodes?.length) return { nodes: [], edges: [] };
+    return buildCallGraphLayout(callGraph);
   }, [callGraph]);
 
-  const [flowNodes, , onNodesChange] = useNodesState(nodes);
-  const [flowEdges, , onEdgesChange] = useEdgesState(edges);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(nodes);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(edges);
+
+  // Sync ReactFlow internal state when computed data changes
+  React.useEffect(() => { setFlowNodes(nodes); }, [nodes, setFlowNodes]);
+  React.useEffect(() => { setFlowEdges(edges); }, [edges, setFlowEdges]);
 
   if (!callGraph?.nodes?.length) {
     return (
@@ -120,19 +154,34 @@ export function CallGraphPanel() {
   }
 
   return (
-    <div style={{ height: '100%' }}>
-      <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.3 }}
-      >
-        <Background variant={BackgroundVariant.Dots} color="#21262d" gap={20} size={1} />
-        <Controls style={{ background: '#161b22', border: '1px solid #30363d' }} />
-      </ReactFlow>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Legend */}
+      <div style={{
+        padding: '4px 10px', borderBottom: '1px solid #21262d',
+        display: 'flex', gap: '12px', fontSize: '10px', flexShrink: 0, flexWrap: 'wrap',
+      }}>
+        <span style={{ color: '#3fb950' }}>● Entry</span>
+        <span style={{ color: '#06b6d4' }}>── Call</span>
+        <span style={{ color: '#e879f9' }}>🔁 Recursive</span>
+        <span style={{ color: '#8b949e' }}>○ External</span>
+        <span style={{ marginLeft: 'auto', color: '#6e7681' }}>
+          {callGraph.nodes.length} method{callGraph.nodes.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <div style={{ flex: 1 }}>
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+        >
+          <Background variant={BackgroundVariant.Dots} color="#21262d" gap={20} size={1} />
+          <Controls style={{ background: '#161b22', border: '1px solid #30363d' }} />
+        </ReactFlow>
+      </div>
     </div>
   );
 }

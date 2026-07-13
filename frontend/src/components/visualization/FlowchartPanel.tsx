@@ -235,13 +235,60 @@ export function FlowchartPanel() {
 
   const activeCfg = selectedMethod ? cfgs[selectedMethod] : null;
 
+  const { currentExecutionLine, executionSnapshot } = useIdeStore();
+  const visitedLines = executionSnapshot?.visitedLines ?? new Set<number>();
+  const branchDecisions = executionSnapshot?.branchDecisions ?? [];
+
   const { nodes, edges } = useMemo(() => {
     if (!activeCfg) return { nodes: [], edges: [] };
     return buildCfgLayout(activeCfg);
   }, [activeCfg]);
 
-  const [flowNodes, , onNodesChange] = useNodesState(nodes);
-  const [flowEdges, , onEdgesChange] = useEdgesState(edges);
+  // Highlight nodes based on execution state
+  const highlightedNodes = useMemo(() => {
+    if (!currentExecutionLine && visitedLines.size === 0) return nodes;
+    return nodes.map(node => {
+      const nodeStartLine = node.data?.range?.startLine;
+      const nodeEndLine = node.data?.range?.endLine;
+      const isCurrent = nodeStartLine && currentExecutionLine &&
+        currentExecutionLine >= nodeStartLine && currentExecutionLine <= (nodeEndLine ?? nodeStartLine);
+      const isVisited = nodeStartLine && visitedLines.has(nodeStartLine);
+
+      if (isCurrent) {
+        return { ...node, style: { ...node.style, boxShadow: '0 0 12px rgba(210,153,34,0.6)', border: '2px solid #d29922' } };
+      }
+      if (isVisited) {
+        return { ...node, style: { ...node.style, opacity: 1, border: '1px solid #3fb950' } };
+      }
+      return node;
+    });
+  }, [nodes, currentExecutionLine, visitedLines]);
+
+  // Highlight edges based on branch decisions
+  const highlightedEdges = useMemo(() => {
+    if (branchDecisions.length === 0) return edges;
+    return edges.map(edge => {
+      const decision = branchDecisions.find(bd => {
+        const sourceNode = nodes.find(n => n.id === edge.source);
+        return sourceNode?.data?.range?.startLine === bd.line;
+      });
+      if (decision) {
+        const isTaken = (edge.data?.label === 'TRUE' && decision.result) ||
+                        (edge.data?.label === 'FALSE' && !decision.result);
+        if (isTaken) {
+          return { ...edge, style: { ...edge.style, stroke: '#3fb950', strokeWidth: 2.5 }, animated: true };
+        }
+      }
+      return edge;
+    });
+  }, [edges, branchDecisions, nodes]);
+
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(highlightedNodes);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(highlightedEdges);
+
+  // Sync ReactFlow internal state when computed data changes
+  React.useEffect(() => { setFlowNodes(highlightedNodes); }, [highlightedNodes, setFlowNodes]);
+  React.useEffect(() => { setFlowEdges(highlightedEdges); }, [highlightedEdges, setFlowEdges]);
 
   if (methodIds.length === 0) {
     return (

@@ -3,6 +3,8 @@ import { useIdeStore } from '../../store/ideStore';
 import { ProblemsPanel } from './ProblemsPanel';
 import { SymbolTablePanel } from './SymbolTablePanel';
 import { ExplanationPanel } from './ExplanationPanel';
+import { TimelinePanel } from './TimelinePanel';
+import { SearchPanel } from './SearchPanel';
 import type { BottomTab } from '../../types';
 
 const TABS: { id: BottomTab; label: string; icon: string }[] = [
@@ -10,14 +12,16 @@ const TABS: { id: BottomTab; label: string; icon: string }[] = [
   { id: 'symtable', label: 'Symbols', icon: '📊' },
   { id: 'explanation', label: 'Explain', icon: '💡' },
   { id: 'debugger', label: 'Debugger', icon: '🐞' },
+  { id: 'timeline', label: 'Timeline', icon: '⏱' },
   { id: 'search', label: 'Search', icon: '🔍' },
 ];
 
 export function BottomPanel() {
-  const { activeBottomTab, setActiveBottomTab, analysisResult } = useIdeStore();
+  const { activeBottomTab, setActiveBottomTab, analysisResult, executionSnapshots } = useIdeStore();
 
   const errorCount = analysisResult?.diagnostics.filter(d => d.severity === 'ERROR').length ?? 0;
   const warnCount = analysisResult?.diagnostics.filter(d => d.severity === 'WARNING').length ?? 0;
+  const timelineCount = executionSnapshots.length;
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column',
@@ -30,7 +34,13 @@ export function BottomPanel() {
       }}>
         {TABS.map(tab => {
           const badge = tab.id === 'problems' && (errorCount + warnCount) > 0
-            ? errorCount + warnCount : null;
+            ? errorCount + warnCount
+            : tab.id === 'timeline' && timelineCount > 0
+            ? timelineCount
+            : null;
+          const badgeColor = tab.id === 'problems'
+            ? (errorCount > 0 ? '#f85149' : '#d29922')
+            : '#7c3aed';
           return (
             <button
               key={tab.id}
@@ -49,7 +59,7 @@ export function BottomPanel() {
               {tab.label}
               {badge && (
                 <span style={{
-                  background: errorCount > 0 ? '#f85149' : '#d29922',
+                  background: badgeColor,
                   color: 'white', borderRadius: '10px',
                   padding: '0 5px', fontSize: '9px', fontWeight: 700,
                   minWidth: '16px', textAlign: 'center',
@@ -67,17 +77,14 @@ export function BottomPanel() {
         {activeBottomTab === 'problems' && <ProblemsPanel />}
         {activeBottomTab === 'symtable' && <SymbolTablePanel />}
         {activeBottomTab === 'explanation' && <ExplanationPanel />}
+        {activeBottomTab === 'timeline' && <TimelinePanel />}
         {activeBottomTab === 'debugger' && (
           <div style={{ padding: '12px', color: '#8b949e', fontSize: '12px' }}>
             <div style={{ color: '#e6edf3', fontWeight: 600, marginBottom: '8px' }}>Debugger State</div>
             <div>Use the Call Stack panel for variables and frames. Set breakpoints in the editor gutter.</div>
           </div>
         )}
-        {activeBottomTab === 'search' && (
-          <div style={{ padding: '12px', color: '#8b949e', fontSize: '12px' }}>
-            <div>No search results.</div>
-          </div>
-        )}
+        {activeBottomTab === 'search' && <SearchPanel />}
       </div>
     </div>
   );

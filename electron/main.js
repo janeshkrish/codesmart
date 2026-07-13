@@ -1,5 +1,6 @@
-const { app, BrowserWindow, protocol, net } = require('electron');
+const { app, BrowserWindow, protocol, net, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs/promises');
 const { spawn, execSync } = require('child_process');
 const netModule = require('net');
 
@@ -21,6 +22,32 @@ let mainWindow;
 let javaProcess;
 
 const BACKEND_PORT = 8080;
+
+ipcMain.handle('files:open-java', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Open Java file',
+    properties: ['openFile'],
+    filters: [{ name: 'Java source', extensions: ['java'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const filePath = result.filePaths[0];
+  return { path: filePath, name: path.basename(filePath), content: await fs.readFile(filePath, 'utf8') };
+});
+
+ipcMain.handle('files:save-java', async (_event, payload) => {
+  let filePath = payload?.path;
+  if (!filePath) {
+    const result = await dialog.showSaveDialog({
+      title: 'Save Java file',
+      defaultPath: 'Main.java',
+      filters: [{ name: 'Java source', extensions: ['java'] }],
+    });
+    if (result.canceled || !result.filePath) return null;
+    filePath = result.filePath;
+  }
+  await fs.writeFile(filePath, String(payload?.content ?? ''), 'utf8');
+  return { path: filePath, name: path.basename(filePath) };
+});
 
 /**
  * Checks if a port is occupied and kills the process holding it (Windows).
@@ -120,7 +147,21 @@ function createWindow() {
   });
 
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.webContents.openDevTools();
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      const key = input.key?.toLowerCase();
+      const isCtrlOrCmd = input.control || input.meta;
+      if (input.key === 'F12' || (isCtrlOrCmd && input.shift && key === 'i')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    }
+  });
+
+  if (!app.isPackaged || process.env.CODESMART_DEBUG === '1') {
+    mainWindow.webContents.openDevTools();
+  }
 
   // Load via our custom app:// protocol instead of file://
   // This gives proper HTTP semantics without CORS/security restrictions

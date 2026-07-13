@@ -4,6 +4,7 @@ import type {
   AnalysisResult, AstNode, VisualizationTab, BottomTab,
   FileNode, StepResult, ScopeInfo, VariableInfo, HeapObject
 } from '../types';
+import type { ExecutionSnapshot } from '../services/executionEngine';
 
 // ============================================================
 // IDE State Store (Zustand)
@@ -41,6 +42,10 @@ interface IdeState {
   consoleLines: { type: 'stdout' | 'stderr' | 'system' | 'stdin'; text: string }[];
   breakpoints: Set<number>;
   currentExecutionLine: number | null;
+  executionPaused: boolean;
+  executionSnapshot: ExecutionSnapshot | null;
+  executionSnapshots: ExecutionSnapshot[];
+  currentSnapshotIndex: number;
 
   // UI State
   showTooltip: boolean;
@@ -75,10 +80,16 @@ interface IdeState {
   setCurrentStepResult: (step: StepResult | null) => void;
   appendConsoleLine: (type: 'stdout' | 'stderr' | 'system' | 'stdin', text: string) => void;
   clearConsoleOutput: () => void;
+  clearExecutionSteps: () => void;
 
   toggleBreakpoint: (line: number) => void;
   clearBreakpoints: () => void;
   setCurrentExecutionLine: (line: number | null) => void;
+  setExecutionPaused: (val: boolean) => void;
+  setExecutionSnapshot: (snapshot: ExecutionSnapshot | null) => void;
+  addExecutionSnapshot: (snapshot: ExecutionSnapshot) => void;
+  goToStep: (index: number) => void;
+  syncExecutionState: (snapshot: ExecutionSnapshot) => void;
 
   showTooltipAt: (content: string, pos: { x: number; y: number }) => void;
   hideTooltip: () => void;
@@ -98,15 +109,27 @@ interface IdeState {
 }
 
 // Default sample code
-const DEFAULT_CODE = `public class Main {
+const DEFAULT_CODE = `import java.util.ArrayList;
+import java.util.List;
+
+public class Main {
+    static int fib(int n) {
+        if (n <= 1) return n;
+        return fib(n - 1) + fib(n - 2);
+    }
+
     public static void main(String[] args) {
-        // Try typing Java code here!
-        int x = 10;
-        int y = 20;
-        int sum = x + y;
-        
-        String name = "CodeSmart";
-        System.out.println("Hello, " + name + "!");
+        int[] dp = new int[5];
+        int[] memo = new int[5];
+        List<Integer> values = new ArrayList<>();
+
+        for (int i = 0; i < 5; i++) {
+            dp[i] = i + 1;
+            memo[i] = dp[i];
+            values.add(dp[i]);
+        }
+
+        System.out.println(fib(4));
     }
 }`;
 
@@ -143,6 +166,10 @@ export const useIdeStore = create<IdeState>()(
     consoleLines: [],
     breakpoints: new Set<number>(),
     currentExecutionLine: null,
+    executionPaused: false,
+    executionSnapshot: null,
+    executionSnapshots: [],
+    currentSnapshotIndex: -1,
 
     showTooltip: false,
     tooltipContent: null,
@@ -216,6 +243,14 @@ export const useIdeStore = create<IdeState>()(
       consoleLines: [...state.consoleLines, { type, text }],
     })),
     clearConsoleOutput: () => set({ consoleLines: [] }),
+    clearExecutionSteps: () => set({
+      executionSteps: [],
+      currentStepResult: null,
+      currentExecutionLine: null,
+      executionSnapshot: null,
+      executionSnapshots: [],
+      currentSnapshotIndex: -1,
+    }),
 
     toggleBreakpoint: (line) => set((state) => {
       const newBreakpoints = new Set(state.breakpoints);
@@ -228,6 +263,33 @@ export const useIdeStore = create<IdeState>()(
     }),
     clearBreakpoints: () => set({ breakpoints: new Set() }),
     setCurrentExecutionLine: (line) => set({ currentExecutionLine: line }),
+    setExecutionPaused: (val) => set({ executionPaused: val }),
+    setExecutionSnapshot: (snapshot) => set({ executionSnapshot: snapshot }),
+    addExecutionSnapshot: (snapshot) => set((state) => ({
+      executionSnapshots: [...state.executionSnapshots, snapshot],
+      currentSnapshotIndex: state.executionSnapshots.length,
+    })),
+    goToStep: (index) => set((state) => {
+      if (index < 0 || index >= state.executionSnapshots.length) return state;
+      const snapshot = state.executionSnapshots[index];
+      return {
+        currentSnapshotIndex: index,
+        executionSnapshot: snapshot,
+        currentExecutionLine: snapshot.currentLine,
+      };
+    }),
+    syncExecutionState: (snapshot) => {
+      set((state) => ({
+        executionSnapshot: snapshot,
+        currentExecutionLine: snapshot.currentLine,
+        executionSnapshots: state.executionSnapshots.some(existing => existing.stepIndex === snapshot.stepIndex)
+          ? state.executionSnapshots
+          : [...state.executionSnapshots, snapshot],
+        currentSnapshotIndex: state.executionSnapshots.findIndex(existing => existing.stepIndex === snapshot.stepIndex) >= 0
+          ? state.executionSnapshots.findIndex(existing => existing.stepIndex === snapshot.stepIndex)
+          : state.executionSnapshots.length,
+      }));
+    },
 
     showTooltipAt: (content, pos) => set({ showTooltip: true, tooltipContent: content, tooltipPosition: pos }),
     hideTooltip: () => set({ showTooltip: false, tooltipContent: null, tooltipPosition: null }),

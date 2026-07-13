@@ -61,6 +61,10 @@ html, body, #root {
   -moz-osx-font-smoothing: grayscale;
 }
 
+button, input, textarea {
+  font: inherit;
+}
+
 /* ============================================================
    Scrollbars
    ============================================================ */
@@ -651,4 +655,69 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* ============================================================
+   ReactFlow Container Fix — Ensure fills parent
+   ============================================================ */
+.react-flow__renderer {
+  height: 100% !important;
+}
+
+/* Ensure ReactFlow wrapper divs fill available space */
+.react-flow {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+/* ============================================================
+   Panel Overflow Fixes
+   ============================================================ */
+/* Panels must be able to shrink inside split groups. Individual panel
+   content owns scrolling; forcing overflow on every panel caused nested
+   scrollbars and jitter in Electron. */
+[data-panel] {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Bottom panel content area scrolls */
+[data-panel] > div {
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ============================================================
+   Timeline Panel Styles
+   ============================================================ */
+.timeline-step:hover {
+  background: rgba(22, 27, 34, 0.8) !important;
+}
+
+.timeline-step.active {
+  background: rgba(124, 58, 237, 0.12) !important;
+  border-left-color: var(--cs-accent) !important;
+}
+
+/* ============================================================
+   Responsive Breakpoints
+   ============================================================ */
+@media (max-width: 1200px) {
+  .toolbar-group {
+    gap: 1px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .cs-toolbar-label,
+  .cs-visualization-label {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  /* Hide text labels on toolbar buttons at narrow widths */
+  .toolbar-group span:not(:has(svg)) {
+    display: none;
+  }
 }

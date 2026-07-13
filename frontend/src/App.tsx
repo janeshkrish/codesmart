@@ -88,8 +88,9 @@ function IdeLayout() {
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
-      width: '100vw',
+      height: '100%',
+      width: '100%',
+      minWidth: 0,
       background: '#0d1117',
       overflow: 'hidden',
     }}>
@@ -100,23 +101,23 @@ function IdeLayout() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Outer vertical split */}
-        <PanelGroup orientation="vertical" style={{ flex: 1, minHeight: 0 }}>
+        <PanelGroup orientation="vertical" style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
 
           {/* ── TOP ROW: Explorer + Editor + Visualization ── */}
-          <Panel defaultSize={72} minSize={40}>
-            <PanelGroup orientation="horizontal" style={{ height: '100%' }}>
+          <Panel defaultSize="72%" minSize="40%">
+            <PanelGroup orientation="horizontal" style={{ height: '100%', minWidth: 0 }}>
 
-              <Panel defaultSize={14} minSize={8} maxSize={25}>
+              <Panel defaultSize="16%" minSize="12%" maxSize="28%" style={{ minWidth: 0 }}>
                 <PackageExplorer />
               </Panel>
               <PanelResizeHandle />
 
-              <Panel defaultSize={46} minSize={25}>
+              <Panel defaultSize="49%" minSize="34%" style={{ minWidth: 0 }}>
                 <JavaEditor />
               </Panel>
               <PanelResizeHandle />
 
-              <Panel defaultSize={40} minSize={20}>
+              <Panel defaultSize="35%" minSize="25%" style={{ minWidth: 0 }}>
                 <VisualizationPanel />
               </Panel>
 
@@ -126,20 +127,20 @@ function IdeLayout() {
           <PanelResizeHandle />
 
           {/* ── BOTTOM ROW: Bottom tabs + Call Stack + Console ── */}
-          <Panel defaultSize={28} minSize={15} maxSize={50}>
-            <PanelGroup orientation="horizontal" style={{ height: '100%' }}>
+          <Panel defaultSize="28%" minSize="20%" maxSize="60%">
+            <PanelGroup orientation="horizontal" style={{ height: '100%', minWidth: 0 }}>
 
-              <Panel defaultSize={50} minSize={20}>
+              <Panel defaultSize="50%" minSize="30%" style={{ minWidth: 0 }}>
                 <BottomPanel />
               </Panel>
               <PanelResizeHandle />
 
-              <Panel defaultSize={25} minSize={15}>
+              <Panel defaultSize="25%" minSize="18%" style={{ minWidth: 0 }}>
                 <CallStackPanel />
               </Panel>
               <PanelResizeHandle />
 
-              <Panel defaultSize={25} minSize={15}>
+              <Panel defaultSize="25%" minSize="18%" style={{ minWidth: 0 }}>
                 <ConsolePanel />
               </Panel>
 
