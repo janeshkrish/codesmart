@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol, net, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, protocol, net, session, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
 const { spawn, execSync } = require('child_process');
@@ -165,7 +165,9 @@ function createWindow() {
 
   // Load via our custom app:// protocol instead of file://
   // This gives proper HTTP semantics without CORS/security restrictions
-  mainWindow.loadURL('app://dist/');
+  // The renderer is a compiled Vite bundle. Give each desktop launch a new
+  // URL so Chromium cannot retain an older hashed asset in its app:// cache.
+  mainWindow.loadURL(`app://dist/?build=${Date.now()}`);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -199,6 +201,11 @@ app.whenReady().then(async () => {
 
     return net.fetch('file:///' + filePath.replace(/\\/g, '/'));
   });
+
+  // Electron can cache app:// assets even after a new Vite build writes the
+  // same path. Clear it before creating the window so desktop runs always use
+  // the current frontend/dist files.
+  await session.defaultSession.clearCache();
 
   try {
     await freePort(BACKEND_PORT);
