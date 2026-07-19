@@ -22,6 +22,7 @@ let mainWindow;
 let javaProcess;
 
 const BACKEND_PORT = 8080;
+const runtimeRoot = app.isPackaged ? process.resourcesPath : path.join(__dirname, '..');
 
 ipcMain.handle('files:open-java', async () => {
   const result = await dialog.showOpenDialog({
@@ -92,7 +93,9 @@ function startJavaBackend() {
   return new Promise((resolve) => {
     console.log('Starting Java Spring Boot backend...');
 
-    const jarPath = path.join(__dirname, '../backend/target/codesmart-backend-1.0.0.jar');
+    const jarPath = app.isPackaged
+      ? path.join(runtimeRoot, 'backend', 'codesmart-backend-1.0.0.jar')
+      : path.join(runtimeRoot, 'backend', 'target', 'codesmart-backend-1.0.0.jar');
     let resolved = false;
 
     const safeResolve = () => {
@@ -191,7 +194,9 @@ app.whenReady().then(async () => {
       pathname = '/index.html';
     }
 
-    const distRoot = path.join(__dirname, '../frontend/dist');
+    const distRoot = app.isPackaged
+      ? path.join(runtimeRoot, 'frontend', 'dist')
+      : path.join(runtimeRoot, 'frontend', 'dist');
     const filePath = path.join(distRoot, pathname);
 
     // Security: ensure the resolved path stays inside dist/

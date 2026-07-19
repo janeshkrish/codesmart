@@ -1,4 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2, Play, StepBack, StepForward, Pause, RotateCcw, Square, ArrowDownToLine, ArrowRightToLine, ArrowUpFromLine } from 'lucide-react';
 import { useIdeStore } from '../../store/ideStore';
+import { useExecution } from '../../hooks/useExecution';
 import { MemoryPanel } from './MemoryPanel';
 import { AstPanel } from './AstPanel';
 import { FlowchartPanel } from './FlowchartPanel';
@@ -29,7 +32,21 @@ const TABS: { id: VisualizationTab; label: string; icon: string }[] = [
 ];
 
 export function VisualizationPanel() {
-  const { activeVisualizationTab, setActiveVisualizationTab, isAnalyzing } = useIdeStore();
+  const { activeVisualizationTab, setActiveVisualizationTab, isAnalyzing, isExecuting, executionPaused } = useIdeStore();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const controls = useExecution();
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === panelRef.current);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await panelRef.current?.requestFullscreen();
+  };
 
   const renderPanel = () => {
     switch (activeVisualizationTab) {
@@ -50,7 +67,7 @@ export function VisualizationPanel() {
   };
 
   return (
-    <div style={{
+    <div ref={panelRef} style={{
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
@@ -67,6 +84,8 @@ export function VisualizationPanel() {
         flexShrink: 0,
         scrollbarWidth: 'none',
       }}>
+        {isFullscreen && <VisualizationControls controls={controls} isExecuting={isExecuting} executionPaused={executionPaused} />}
+
         {TABS.map(tab => (
           <button
             key={tab.id}
@@ -112,11 +131,60 @@ export function VisualizationPanel() {
             Analyzing...
           </div>
         )}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? 'Exit full screen' : 'Open visualizer in full screen'}
+          style={{
+            marginLeft: 'auto', marginRight: '8px', width: '28px', height: '28px', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            color: '#8b949e', background: 'transparent', border: '1px solid #30363d', borderRadius: '4px',
+          }}
+        >
+          {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </button>
       </div>
 
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {renderPanel()}
       </div>
+    </div>
+  );
+}
+
+function VisualizationControls({
+  controls,
+  isExecuting,
+  executionPaused,
+}: {
+  controls: ReturnType<typeof useExecution>;
+  isExecuting: boolean;
+  executionPaused: boolean;
+}) {
+  const actions = [
+    ['Run', <Play size={13} />, controls.run, !isExecuting],
+    ['Step', <StepForward size={13} />, controls.step, false],
+    ['Into', <ArrowDownToLine size={13} />, controls.stepInto, false],
+    ['Over', <ArrowRightToLine size={13} />, controls.stepOver, false],
+    ['Out', <ArrowUpFromLine size={13} />, controls.stepOut, !isExecuting],
+    ['Back', <StepBack size={13} />, controls.stepBack, !isExecuting],
+    ['Pause', <Pause size={13} />, controls.pause, !isExecuting || executionPaused],
+    ['Resume', <Play size={13} />, controls.resume, !executionPaused],
+    ['Restart', <RotateCcw size={13} />, controls.restart, !isExecuting],
+    ['Stop', <Square size={13} />, controls.stop, !isExecuting],
+  ] as const;
+
+  return (
+    <div style={{ display: 'flex', gap: '3px', alignItems: 'center', padding: '0 8px', borderRight: '1px solid #30363d', flexShrink: 0 }}>
+      {actions.map(([label, icon, onClick, disabled]) => (
+        <button key={label} onClick={onClick} disabled={disabled} title={label} style={{
+          height: '25px', display: 'flex', alignItems: 'center', gap: '3px', padding: '0 6px',
+          background: label === 'Run' ? 'rgba(63,185,80,0.12)' : 'transparent',
+          color: disabled ? '#484f58' : label === 'Run' ? '#3fb950' : '#c9d1d9',
+          border: '1px solid #30363d', borderRadius: '4px', fontSize: '10px', cursor: disabled ? 'not-allowed' : 'pointer',
+        }}>
+          {icon}{label}
+        </button>
+      ))}
     </div>
   );
 }

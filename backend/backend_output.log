@@ -1,0 +1,61 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.2.5)
+
+2026-07-19T15:18:52.081+05:30  INFO 14252 --- [codesmart-backend] [           main] com.codesmart.CodeSmartApplication       : Starting CodeSmartApplication v1.0.0 using Java 23 with PID 14252 (D:\codesmart\backend\target\codesmart-backend-1.0.0.jar started by janes in D:\codesmart)
+2026-07-19T15:18:52.083+05:30 DEBUG 14252 --- [codesmart-backend] [           main] com.codesmart.CodeSmartApplication       : Running with Spring Boot v3.2.5, Spring v6.1.6
+2026-07-19T15:18:52.085+05:30  INFO 14252 --- [codesmart-backend] [           main] com.codesmart.CodeSmartApplication       : No active profile set, falling back to 1 default profile: "default"
+2026-07-19T15:18:53.746+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2026-07-19T15:18:53.758+05:30  INFO 14252 --- [codesmart-backend] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-07-19T15:18:53.759+05:30  INFO 14252 --- [codesmart-backend] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.20]
+2026-07-19T15:18:53.795+05:30  INFO 14252 --- [codesmart-backend] [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-07-19T15:18:53.796+05:30  INFO 14252 --- [codesmart-backend] [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1603 ms
+2026-07-19T15:18:54.285+05:30 DEBUG 14252 --- [codesmart-backend] [           main] o.s.w.s.s.s.WebSocketHandlerMapping      : Patterns [/ws/**] in 'stompWebSocketHandlerMapping'
+2026-07-19T15:18:54.371+05:30 DEBUG 14252 --- [codesmart-backend] [           main] .WebSocketAnnotationMethodMessageHandler : 
+	c.c.a.AnalysisController:
+	
+2026-07-19T15:18:54.372+05:30 DEBUG 14252 --- [codesmart-backend] [           main] .WebSocketAnnotationMethodMessageHandler : 
+	c.c.a.ExecutionController:
+	
+2026-07-19T15:18:54.380+05:30 DEBUG 14252 --- [codesmart-backend] [           main] .WebSocketAnnotationMethodMessageHandler : 
+	o.s.b.a.w.s.e.BasicErrorController:
+	
+2026-07-19T15:18:54.937+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 3 endpoint(s) beneath base path '/actuator'
+2026-07-19T15:18:55.054+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path ''
+2026-07-19T15:18:55.056+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.m.s.b.SimpleBrokerMessageHandler     : Starting...
+2026-07-19T15:18:55.058+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.m.s.b.SimpleBrokerMessageHandler     : BrokerAvailabilityEvent[available=true, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@4f64d9cb]]
+2026-07-19T15:18:55.058+05:30  INFO 14252 --- [codesmart-backend] [           main] o.s.m.s.b.SimpleBrokerMessageHandler     : Started.
+2026-07-19T15:18:55.077+05:30  INFO 14252 --- [codesmart-backend] [           main] com.codesmart.CodeSmartApplication       : Started CodeSmartApplication in 3.482 seconds (process running for 3.979)
+2026-07-19T15:19:54.986+05:30  INFO 14252 --- [codesmart-backend] [MessageBroker-1] o.s.w.s.c.WebSocketMessageBrokerStats    : WebSocketSession[0 current WS(0)-HttpStream(0)-HttpPoll(0), 0 total, 0 closed abnormally (0 connect failure, 0 send limit, 0 transport error)], stompSubProtocol[processed CONNECT(0)-CONNECTED(0)-DISCONNECT(0)], stompBrokerRelay[null], inboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 0], outboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 0], sockJsScheduler[pool size = 1, active threads = 1, queued tasks = 0, completed tasks = 0]
+2026-07-19T15:21:35.483+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-07-19T15:21:35.483+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-07-19T15:21:35.484+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-07-19T15:21:46.929+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-2] com.codesmart.api.ExecutionController    : Starting execution session: 4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae
+2026-07-19T15:21:50.591+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-6] c.codesmart.execution.ExecutionEngine    : Compiling C:\Users\janes\AppData\Local\Temp\codesmart-exec-4073855539836531273\Main.java in C:\Users\janes\AppData\Local\Temp\codesmart-exec-4073855539836531273
+2026-07-19T15:21:51.164+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-6] c.codesmart.execution.ExecutionEngine    : Compile result: 0
+2026-07-19T15:21:51.164+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-6] c.codesmart.execution.ExecutionEngine    : Starting execution of Main in C:\Users\janes\AppData\Local\Temp\codesmart-exec-4073855539836531273
+2026-07-19T15:21:51.165+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-6] c.codesmart.execution.ExecutionEngine    : Process command: [java, --enable-preview, -Xmx128m, -Xss512k, -cp, C:\Users\janes\AppData\Local\Temp\codesmart-exec-4073855539836531273, Main]
+2026-07-19T15:21:51.171+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-6] c.codesmart.execution.ExecutionEngine    : Process started for session 4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae, pid=18596
+2026-07-19T15:21:51.173+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Starting output reader for session 4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae
+2026-07-19T15:21:51.174+05:30  INFO 14252 --- [codesmart-backend] [onPool-worker-1] c.codesmart.execution.ExecutionEngine    : Waiting for process to finish for session 4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae
+2026-07-19T15:21:51.260+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Process output [4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae]: Hello World
+2026-07-19T15:21:51.261+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Process output [4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae]: Second line
+2026-07-19T15:21:51.280+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Output reader finished for session 4fb5da0a-094c-4e6a-acfc-f34e60c8a4ae
+2026-07-19T15:21:51.283+05:30  INFO 14252 --- [codesmart-backend] [onPool-worker-1] c.codesmart.execution.ExecutionEngine    : Process finished: true, exit code: 0
+2026-07-19T15:23:18.733+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-5] com.codesmart.api.ExecutionController    : Starting execution session: a78de5aa-e1dc-4c13-8854-aa90c74027c2
+2026-07-19T15:23:20.032+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-4] c.codesmart.execution.ExecutionEngine    : Compiling C:\Users\janes\AppData\Local\Temp\codesmart-exec-13196687762414797940\Main.java in C:\Users\janes\AppData\Local\Temp\codesmart-exec-13196687762414797940
+2026-07-19T15:23:20.612+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-4] c.codesmart.execution.ExecutionEngine    : Compile result: 0
+2026-07-19T15:23:20.613+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-4] c.codesmart.execution.ExecutionEngine    : Starting execution of Main in C:\Users\janes\AppData\Local\Temp\codesmart-exec-13196687762414797940
+2026-07-19T15:23:20.613+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-4] c.codesmart.execution.ExecutionEngine    : Process command: [java, --enable-preview, -Xmx128m, -Xss512k, -cp, C:\Users\janes\AppData\Local\Temp\codesmart-exec-13196687762414797940, Main]
+2026-07-19T15:23:20.619+05:30  INFO 14252 --- [codesmart-backend] [nio-8080-exec-4] c.codesmart.execution.ExecutionEngine    : Process started for session a78de5aa-e1dc-4c13-8854-aa90c74027c2, pid=24176
+2026-07-19T15:23:20.619+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Starting output reader for session a78de5aa-e1dc-4c13-8854-aa90c74027c2
+2026-07-19T15:23:20.620+05:30  INFO 14252 --- [codesmart-backend] [onPool-worker-2] c.codesmart.execution.ExecutionEngine    : Waiting for process to finish for session a78de5aa-e1dc-4c13-8854-aa90c74027c2
+2026-07-19T15:23:20.698+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Process output [a78de5aa-e1dc-4c13-8854-aa90c74027c2]: Hello World
+2026-07-19T15:23:20.698+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Process output [a78de5aa-e1dc-4c13-8854-aa90c74027c2]: Second line
+2026-07-19T15:23:20.715+05:30  INFO 14252 --- [codesmart-backend] [n-output-reader] c.codesmart.execution.ExecutionEngine    : Output reader finished for session a78de5aa-e1dc-4c13-8854-aa90c74027c2
+2026-07-19T15:23:20.718+05:30  INFO 14252 --- [codesmart-backend] [onPool-worker-2] c.codesmart.execution.ExecutionEngine    : Process finished: true, exit code: 0

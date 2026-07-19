@@ -30,6 +30,11 @@ public class ExecutionEngine {
 
     private static final int SANDBOX_TIMEOUT_MS = 15_000;
     private static final JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
+    private static final ExecutorService OUTPUT_READER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "execution-output-reader");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * Creates a new execution session for the given source.
@@ -70,7 +75,7 @@ public class ExecutionEngine {
 
             JavaCompiler.CompilationTask task = COMPILER.getTask(
                     null, new InMemoryFileManager(fileManager, session),
-                    collector, List.of("--enable-preview", "--release", "21"),
+                    collector, List.of("--enable-preview", "--release", "23"),
                     null, List.of(sourceFile));
 
             boolean success = task.call();
@@ -127,10 +132,8 @@ public class ExecutionEngine {
         }
 
         if (session.getStatus() == ExecutionSession.Status.FINISHED) {
-            return StepResult.builder()
-                    .type(StepResult.StepType.FINISHED)
-                    .message("Program has finished executing.")
-                    .build();
+            // Still call advanceExecution to capture final output
+            return advanceExecution(session);
         }
 
         // Resume execution until next breakpoint fires
@@ -194,7 +197,7 @@ public class ExecutionEngine {
         session.setStatus(ExecutionSession.Status.READY);
         session.setCurrentStepIndex(-1);
         session.getStepHistory().clear();
-        session.setConsoleOutput(new StringBuilder());
+        session.setConsoleOutput(new StringBuffer());
     }
 
     public void terminate(ExecutionSession session) {
@@ -235,8 +238,9 @@ public class ExecutionEngine {
             Files.writeString(sourceFile, session.getSource());
 
             // Compile
+            log.info("Compiling {} in {}", sourceFile, tempDir);
             int compileResult = new ProcessBuilder(
-                    "javac", "--enable-preview", "--release", "21",
+                    "javac", "--enable-preview", "--release", "23",
                     "-d", tempDir.toString(),
                     sourceFile.toString()
             ).directory(tempDir.toFile())
@@ -244,41 +248,49 @@ public class ExecutionEngine {
              .start()
              .waitFor();
 
+            log.info("Compile result: {}", compileResult);
             if (compileResult != 0) {
                 session.setStatus(ExecutionSession.Status.ERROR);
                 return;
             }
 
             // Start execution process
-            Process process = new ProcessBuilder(
+            log.info("Starting execution of {} in {}", session.getClassName(), tempDir);
+            ProcessBuilder pb = new ProcessBuilder(
                     "java", "--enable-preview",
                     "-Xmx128m", "-Xss512k",
                     "-cp", tempDir.toString(),
                     session.getClassName()
             ).directory(tempDir.toFile())
-             .redirectErrorStream(true)
-             .start();
+             .redirectErrorStream(true);
+            
+            log.info("Process command: {}", pb.command());
+            Process process = pb.start();
+            log.info("Process started for session {}, pid={}", session.getExecutionId(), process.pid());
 
             session.setProcess(process);
             session.setStatus(ExecutionSession.Status.RUNNING);
-            session.setConsoleOutput(new StringBuilder());
-
-            // Read output in background
-            CompletableFuture.runAsync(() -> {
+            session.setConsoleOutput(new StringBuffer()); // thread-safe
+            OUTPUT_READER_EXECUTOR.submit(() -> {
+                log.info("Starting output reader for session {}", session.getExecutionId());
                 try (var reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
+                        log.info("Process output [{}]: {}", session.getExecutionId(), line);
                         session.getConsoleOutput().append(line).append("\n");
                     }
+                    log.info("Output reader finished for session {}", session.getExecutionId());
                 } catch (IOException e) {
-                    log.debug("Process stream closed: {}", e.getMessage());
+                    log.error("Error reading process output for session {}: {}", session.getExecutionId(), e.getMessage());
                 }
             });
 
-            // Wait for process with timeout
+            // Wait for process with timeout in background
             CompletableFuture.runAsync(() -> {
                 try {
+                    log.info("Waiting for process to finish for session {}", session.getExecutionId());
                     boolean finished = process.waitFor(SANDBOX_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    log.info("Process finished: {}, exit code: {}", finished, process.exitValue());
                     if (!finished) {
                         process.destroyForcibly();
                         log.warn("Execution timed out for session {}", session.getExecutionId());
@@ -302,8 +314,11 @@ public class ExecutionEngine {
 
         if (process == null || !process.isAlive()) {
             session.setStatus(ExecutionSession.Status.FINISHED);
+            // Wait for output reader to finish if process just exited
+            try { Thread.sleep(200); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             String output = session.getConsoleOutput() != null ?
                     session.getConsoleOutput().toString() : "";
+            log.info("advanceExecution: process finished, output length: {}", output.length());
             return StepResult.builder()
                     .type(StepResult.StepType.FINISHED)
                     .message("Program finished.")

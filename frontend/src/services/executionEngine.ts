@@ -91,11 +91,16 @@ export interface BranchDecision {
   type: 'if' | 'while' | 'for' | 'switch';
 }
 
+interface StructuredReturn {
+  value: unknown;
+}
+
 // ============================================================
 // Execution Engine
 // ============================================================
 
 export class FrontendExecutionEngine {
+  private static readonly MAX_STRUCTURED_SNAPSHOTS = 5_000;
   private snapshots: ExecutionSnapshot[] = [];
   private currentIndex = -1;
   private callStack: StackFrameState[] = [];
@@ -136,6 +141,7 @@ export class FrontendExecutionEngine {
       this.extractMethods(analysisResult.astRoot);
       this.extractStatements(analysisResult.astRoot);
       if (this.containsNumericForLoop(analysisResult.astRoot) || this.methods.size > 1) {
+        this.initializeStaticFields(analysisResult.astRoot);
         this.prepareStructuredSnapshots();
       }
     }
@@ -447,53 +453,111 @@ export class FrontendExecutionEngine {
     return snapshot;
   }
 
-  private executeStructuredStatement(node: AstNode) {
+  private initializeStaticFields(node: AstNode) {
+    if (node.type === 'FieldDeclaration') {
+      this.executeStructuredDeclaration(node.sourceText || node.label || '');
+    }
+    node.children?.forEach(child => this.initializeStaticFields(child));
+  }
+
+  private executeStructuredStatement(node: AstNode): StructuredReturn | null {
     if (node.type === 'VariableDeclaration') {
       this.executeStructuredDeclaration(node.sourceText || node.label || '');
       this.recordStructuredSnapshot(node);
-      return;
+      return null;
     }
 
     if (node.type === 'ExpressionStmt' && node.children?.[0]?.type === 'VariableDeclaration') {
       const source = node.sourceText || node.children[0].sourceText || '';
-      if (/\bint\s*\[\]/.test(source)) {
+      // JavaParser wraps local declarations in ExpressionStmt nodes. Route
+      // primitives and common collections through the evaluator so values
+      // such as `coins.length` and `Integer.MAX_VALUE - 1` are resolved.
+      if (/^\s*(?:(?:public|private|protected|static|final)\s+)*(?:int|long|double|float|boolean|char|byte|short|List|Set|Queue|Deque|Stack|Map)\b/.test(source)) {
         this.executeStructuredDeclaration(source);
       } else {
         this.executeVariableDeclaration(node.children[0], source);
       }
       this.recordStructuredSnapshot(node);
-      return;
+      return null;
     }
 
     if (node.type === 'ForStmt') {
-      this.executeStructuredForLoop(node);
-      return;
+      return this.executeStructuredForLoop(node);
+    }
+
+    if (node.type === 'IfStmt') {
+      return this.executeStructuredIf(node);
+    }
+
+    if (node.type === 'ReturnStmt') {
+      const expression = (node.sourceText || node.label || '').replace(/^\s*return\s+|;\s*$/g, '').trim();
+      const value = this.evaluateMethodExpression(expression);
+      this.recordStructuredSnapshot(node);
+      return { value };
     }
 
     const source = node.sourceText || node.label || '';
     this.executeStructuredSource(source);
     this.recordStructuredSnapshot(node);
+    return null;
   }
 
-  private executeStructuredForLoop(node: AstNode) {
+  private executeStructuredIf(node: AstNode): StructuredReturn | null {
+    const conditionNode = node.children?.find(child => child.type === 'Condition');
+    const condition = conditionNode?.sourceText || node.sourceText?.match(/if\s*\((.*)\)/)?.[1] || '';
+    const matched = this.evaluateCondition(condition);
+    this.branchDecisions.push({ line: node.range?.startLine ?? 0, condition, result: matched, type: 'if' });
+    const branches = node.children?.filter(child => child.type !== 'Condition') ?? [];
+    // The parser represents an else body as its normal AST node and prefixes
+    // its label with "else:" (rather than wrapping it in an ElseStmt node).
+    const thenBranch = branches.find(child => !child.label.trim().startsWith('else:'));
+    const elseNode = branches.find(child => child.type === 'ElseStmt' || child.label.trim().startsWith('else:'));
+    const branch = matched ? thenBranch : (elseNode?.children?.[0] ?? elseNode);
+    if (!branch) return null;
+    if (branch.type === 'BlockStmt') {
+      for (const child of branch.children ?? []) {
+        const result = this.executeStructuredStatement(child);
+        if (result) return result;
+      }
+      return null;
+    }
+    return this.executeStructuredStatement(branch);
+  }
+
+  private executeStructuredForLoop(node: AstNode): StructuredReturn | null {
     const initNode = node.children?.find(child => child.type === 'ForInit');
     const condition = node.children?.find(child => child.type === 'ForCondition')?.sourceText || '';
     const updateNode = node.children?.find(child => child.type === 'ForUpdate');
     const init = this.extractForFragment(initNode, 0);
     const update = this.extractForFragment(updateNode, 2);
-    const body = node.children?.find(child => child.type === 'BlockStmt');
-    if (!init || !condition || !update || !body) return;
+    let body = node.children?.find(child => child.type === 'BlockStmt');
+    if (!body) {
+      // Braceless for-loop: the body is a bare statement (e.g. ExpressionStmt)
+      const metaTypes = new Set(['ForInit', 'ForCondition', 'ForUpdate']);
+      const bareBody = node.children?.find(child => !metaTypes.has(child.type));
+      if (bareBody) {
+        body = { id: 'synth-block', type: 'BlockStmt', label: '', children: [bareBody] } as AstNode;
+      }
+    }
+    if (!init || !condition || !update || !body) return null;
 
     this.executeStructuredDeclaration(init);
     let guard = 0;
-    while (this.evaluateCondition(condition) && guard++ < 1_000) {
+    while (
+      this.evaluateCondition(condition)
+      && guard++ < 1_000
+      && this.snapshots.length < FrontendExecutionEngine.MAX_STRUCTURED_SNAPSHOTS
+    ) {
       this.branchDecisions.push({
         line: node.range?.startLine ?? 0,
         condition,
         result: true,
         type: 'for',
       });
-      for (const child of body.children ?? []) this.executeStructuredStatement(child);
+      for (const child of body.children ?? []) {
+        const result = this.executeStructuredStatement(child);
+        if (result) return result;
+      }
       this.executeStructuredUpdate(update);
     }
     this.branchDecisions.push({
@@ -502,6 +566,7 @@ export class FrontendExecutionEngine {
       result: false,
       type: 'for',
     });
+    return null;
   }
 
   private extractForFragment(node: AstNode | undefined, position: 0 | 2): string {
@@ -526,6 +591,14 @@ export class FrontendExecutionEngine {
       this.dpArrays = [...this.dpArrays.filter(array => array.name !== name), { name, dimensions, values1D, values2D }];
       return;
     }
+    const literalArrayMatch = source.match(/(?:(?:public|private|protected|static|final)\s+)*int\s*\[\]\s+(\w+)\s*=\s*\{([^}]*)\}/);
+    if (literalArrayMatch) {
+      const [, name, values] = literalArrayMatch;
+      const parsed = values.split(',').map(value => this.evaluateExpression(value.trim()));
+      this.setVariable(name, parsed);
+      this.dpArrays = [...this.dpArrays.filter(array => array.name !== name), { name, dimensions: 1, values1D: parsed }];
+      return;
+    }
     const collectionMatch = source.match(/(?:List|Set|Queue|Deque|Stack|Map)(?:\s*<[^;=]+>)?\s+(\w+)\s*=\s*new\s+(\w+)/);
     if (collectionMatch) {
       const [, name, type] = collectionMatch;
@@ -533,26 +606,57 @@ export class FrontendExecutionEngine {
       this.setVariable(name, []);
       return;
     }
-    const match = source.match(/(?:final\s+)?(int|long|double|float|boolean|char|byte|short)\s+(\w+)\s*=\s*(.+?);?$/);
+    const match = source.match(/(?:(?:public|private|protected|static|final)\s+)*(int|long|double|float|boolean|char|byte|short)\s+(\w+)\s*=\s*(.+?);?$/);
     if (!match) return;
     const [, type, name, expression] = match;
-    this.setVariable(name, this.evaluateExpression(expression));
+    const methodCall = expression.trim().match(/^(?:\w+\s*\.\s*)?(\w+)\s*\((.*)\)$/);
+    const value = methodCall && this.methods.has(methodCall[1])
+      ? this.invokeStructuredMethod(methodCall[1], methodCall[2])
+      : this.evaluateExpression(expression);
+    this.setVariable(name, value);
     const frame = this.callStack[this.callStack.length - 1];
     if (frame) frame.localVariables.set(name, { name, type, value: this.getVariable(name), storageKind: this.inferStorageKind(type) });
   }
 
   private executeStructuredSource(source: string) {
-    source = source.trim();
+    // AST statement text preserves line breaks. Normalising it lets the
+    // evaluator handle readable multi-line expressions such as Math.min(...).
+    source = source
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\r\n]*/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
     this.trackCollectionOperation(source);
     if (source.includes('System.out.print')) {
       const printMatch = source.match(/System\.out\.println?\s*\((.+)\)\s*;?$/);
-      const callMatch = printMatch?.[1].match(/^(\w+)\s*\((.*)\)$/);
+      // Accept both direct/static calls (coinChange(...)) and instance calls
+      // (solver.coinChange(...)).  The visualizer models the method execution;
+      // the receiver name does not affect this local execution state.
+      const callMatch = printMatch?.[1].match(/^(?:\w+\s*\.\s*)?(\w+)\s*\((.*)\)$/);
       if (callMatch && this.methods.has(callMatch[1])) {
+        const unresolvedArgument = callMatch[2]
+          .split(',')
+          .map(argument => argument.trim())
+          .find(argument => /^[A-Za-z_]\w*$/.test(argument) && this.getVariable(argument) === undefined);
+        if (unresolvedArgument) {
+          this.consoleOutput += `Cannot run ${callMatch[1]}: '${unresolvedArgument}' is not declared. Did you mean a variable with a similar name?\n`;
+          return;
+        }
         const value = this.invokeStructuredMethod(callMatch[1], callMatch[2]);
         this.consoleOutput += `${String(value)}${source.includes('println') ? '\n' : ''}`;
         return;
       }
       this.executeExpression({ id: 'print', type: 'ExpressionStmt', label: source, sourceText: source }, source);
+      return;
+    }
+    const allocation = source.match(/^(\w+)\s*=\s*new\s+int\s*\[\s*(.+?)\s*\]\s*\[\s*(.+?)\s*\]\s*;?$/);
+    if (allocation) {
+      const [, name, rowExpression, columnExpression] = allocation;
+      const rows = Number(this.evaluateExpression(rowExpression));
+      const columns = Number(this.evaluateExpression(columnExpression));
+      const values2D = Array.from({ length: Math.max(0, rows) }, () => Array.from({ length: Math.max(0, columns) }, () => 0));
+      this.setVariable(name, values2D);
+      this.dpArrays = [...this.dpArrays.filter(array => array.name !== name), { name, dimensions: 2, values2D }];
       return;
     }
     const arrayAssignment = source.match(/^(\w+)\s*\[\s*(.+?)\s*\](?:\s*\[\s*(.+?)\s*\])?\s*=\s*(.+?);?$/);
@@ -622,19 +726,13 @@ export class FrontendExecutionEngine {
     });
     this.recordStructuredSnapshot(method);
 
-    let returnNode = body.children?.find(child => child.type === 'ReturnStmt');
-    const ifNode = body.children?.find(child => child.type === 'IfStmt');
-    if (ifNode) {
-      const condition = ifNode.children?.find(child => child.type === 'Condition')?.sourceText || ifNode.sourceText || '';
-      if (this.evaluateCondition(condition.replace(/^if\s*\(|\)\s*$/g, ''))) {
-        returnNode = ifNode.children?.find(child => child.type === 'ReturnStmt') ?? returnNode;
-      }
+    let result: StructuredReturn | null = null;
+    for (const statement of body.children ?? []) {
+      result = this.executeStructuredStatement(statement);
+      if (result) break;
     }
-
-    const expression = (returnNode?.sourceText || '').replace(/^return\s+|;$/g, '').trim();
-    const value = this.evaluateMethodExpression(expression);
+    const value = result?.value;
     frame.returnValue = value;
-    if (returnNode) this.recordStructuredSnapshot(returnNode);
     this.popCallFrame();
     return value;
   }
@@ -651,15 +749,61 @@ export class FrontendExecutionEngine {
   }
 
   private evaluateCondition(expression: string): boolean {
-    return Boolean(this.evaluateExpression(expression));
+    const value = this.evaluateExpression(expression);
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      if (value.trim() === 'true') return true;
+      if (value.trim() === 'false') return false;
+    }
+    // An unparsed expression must never become a truthy string and turn into
+    // hundreds of synthetic iterations on the UI thread.
+    return false;
   }
 
   private evaluateExpression(expression: string): unknown {
-    const substituted = expression.replace(/\b[A-Za-z_]\w*\b/g, token => {
+    const trimmed = expression.trim();
+    // Preserve arrays and object references when they are passed as arguments.
+    // Replacing only numbers would otherwise turn coinChange(coins, amount)
+    // into the literal string "coins".
+    if (/^[A-Za-z_]\w*$/.test(trimmed)) {
+      const value = this.getVariable(trimmed);
+      if (value !== undefined) return value;
+    }
+
+    let substituted = trimmed
+      .replace(/Integer\.MAX_VALUE\b/g, String(2_147_483_647))
+      .replace(/(\w+)\.length\b/g, (_match, name) => {
+      const value = this.getVariable(name);
+      return Array.isArray(value) || typeof value === 'string' ? String(value.length) : '0';
+      });
+    // Resolve innermost array lookups repeatedly, so expressions such as
+    // dp[i][j - coins[i - 1]] work just like their Java counterparts.
+    for (let pass = 0; pass < 10 && substituted.includes('['); pass++) {
+      // Resolve complete two-dimensional access first. A 1D match must not
+      // consume just `dp[i]` when the remaining column expression contains
+      // another array access (for example, coins[i - 1]).
+      let next = substituted.replace(/(\w+)\s*\[\s*([^\[\]]+)\s*\]\s*\[\s*([^\[\]]+)\s*\]/g, (_match, name, firstIndex, secondIndex) => {
+        const value = this.getVariable(name);
+        const row = Number(this.evaluateExpression(firstIndex));
+        if (!Array.isArray(value)) return 'undefined';
+        const column = Number(this.evaluateExpression(secondIndex));
+        return String((value[row] as unknown[] | undefined)?.[column] ?? 0);
+      });
+      next = next.replace(/(\w+)\s*\[\s*([^\[\]]+)\s*\](?!\s*\[)/g, (_match, name, indexExpression) => {
+        const value = this.getVariable(name);
+        const index = Number(this.evaluateExpression(indexExpression));
+        return Array.isArray(value) ? String(value[index] ?? 0) : 'undefined';
+      });
+      if (next === substituted) break;
+      substituted = next;
+    }
+    substituted = substituted.replace(/Math\.min\s*\(([^,]+),\s*([^)]+)\)/g, 'Math.min($1,$2)');
+    substituted = substituted.replace(/\b[A-Za-z_]\w*\b/g, token => {
       const value = this.getVariable(token);
       return typeof value === 'number' || typeof value === 'boolean' ? String(value) : token;
     }).trim();
-    if (!/^[\d\s+\-*/%()<>!=&|.]+$/.test(substituted)) return this.parseValue(expression.trim());
+    if (!/^[\d\s+\-*/%()<>!=&|.,?:A-Za-z]+$/.test(substituted)) return this.parseValue(expression.trim());
     try {
       return Function(`"use strict"; return (${substituted});`)();
     } catch {
@@ -927,7 +1071,12 @@ export class FrontendExecutionEngine {
     this.visitedLines = new Set(snapshot.visitedLines);
     this.branchDecisions = [...snapshot.branchDecisions];
     this.consoleOutput = snapshot.consoleOutput;
-    this.dpArrays = snapshot.dpArrays.map(d => ({ ...d }));
+    this.dpArrays = snapshot.dpArrays.map(d => ({
+      ...d,
+      values1D: d.values1D ? [...d.values1D] : undefined,
+      values2D: d.values2D ? d.values2D.map(r => [...r]) : undefined,
+      lastChangedIndex: d.lastChangedIndex ? { ...d.lastChangedIndex } : undefined,
+    }));
     this.memoCache = {
       entries: new Map(snapshot.memoCache.entries),
       lastAction: snapshot.memoCache.lastAction,
@@ -997,7 +1146,7 @@ export class FrontendExecutionEngine {
             virtualAddress: 0x3000 + i * 0x10,
             gcEligible: false,
             referenceCount: 1,
-            arrayElements: dp.values2D[i],
+            arrayElements: [...dp.values2D[i]],
             arrayComponentType: 'int',
             arrayLength: dp.values2D[i].length,
           });
@@ -1022,7 +1171,7 @@ export class FrontendExecutionEngine {
           virtualAddress: 0x2000,
           gcEligible: false,
           referenceCount: 1,
-          arrayElements: dp.values1D,
+          arrayElements: [...dp.values1D],
           arrayComponentType: 'int',
           arrayLength: dp.values1D.length,
         });

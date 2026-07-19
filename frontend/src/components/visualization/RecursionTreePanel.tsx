@@ -138,6 +138,15 @@ export function RecursionTreePanel() {
           {trace.nodes.length} call{trace.nodes.length !== 1 ? 's' : ''}
         </span>
       </div>
+      <div style={{
+        margin: '10px 12px 0', padding: '8px 10px', borderRadius: '6px',
+        background: 'rgba(124,58,237,0.10)', border: '1px solid rgba(124,58,237,0.28)',
+        color: '#c9d1d9', fontSize: '11px', lineHeight: 1.45, flexShrink: 0,
+      }}>
+        <strong style={{ color: '#c4b5fd' }}>How to read this:</strong> each box is one function call.
+        Follow arrows downward when a call asks for a smaller answer; green boxes show answers returning upward.
+        The amber box is the call currently being solved.
+      </div>
       <div style={{ flex: 1 }}>
         <ReactFlow
           nodes={layout.nodes}

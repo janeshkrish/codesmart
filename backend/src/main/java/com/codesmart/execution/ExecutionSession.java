@@ -13,7 +13,7 @@ public class ExecutionSession {
     private Status status;
     private Process process;
     private Path workDir;
-    private StringBuilder consoleOutput;
+    private StringBuffer consoleOutput;
     private List<StepResult> stepHistory;
     private int currentStepIndex;
     private volatile boolean running;

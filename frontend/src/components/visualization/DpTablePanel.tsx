@@ -13,14 +13,16 @@ export function DpTablePanel() {
   // ─── 1. Try execution-engine snapshot first (richest source) ───────────────
   const snapDp2D = useMemo(() => {
     const dpArrays = executionSnapshot?.dpArrays ?? [];
-    const arr2D = dpArrays.find(d => d.dimensions === 2 && d.values2D && d.values2D.length > 0);
+    const arr2D = dpArrays.find(d => d.name.toLowerCase() === 'dp' && d.dimensions === 2 && d.values2D && d.values2D.length > 0)
+      ?? dpArrays.find(d => d.dimensions === 2 && d.values2D && d.values2D.length > 0);
     if (arr2D?.values2D) return { variableName: arr2D.name, values: arr2D.values2D as ArrayCellValue[][] };
     return null;
   }, [executionSnapshot]);
 
   const snapDp1D = useMemo(() => {
     const dpArrays = executionSnapshot?.dpArrays ?? [];
-    const arr1D = dpArrays.find(d => d.dimensions === 1 && d.values1D && d.values1D.length > 0);
+    const arr1D = dpArrays.find(d => d.name.toLowerCase() === 'dp' && d.dimensions === 1 && d.values1D && d.values1D.length > 0)
+      ?? dpArrays.find(d => d.dimensions === 1 && d.values1D && d.values1D.length > 0);
     if (arr1D?.values1D) return { variableName: arr1D.name, values: arr1D.values1D as ArrayCellValue[] };
     return null;
   }, [executionSnapshot]);
@@ -133,10 +135,10 @@ function Table2D({
                         animate={{ scale: 1, opacity: 1 }}
                         style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       >
-                        {String(val ?? 0)}
+                        {formatCellValue(val)}
                       </motion.div>
                     )}
-                    {!isChanged && String(val ?? 0)}
+                    {!isChanged && formatCellValue(val)}
                   </td>
                 );
               })}
@@ -190,7 +192,7 @@ function Table1D({
                   transition: 'background 0.3s, border-color 0.3s',
                 }}
               >
-                {String(val ?? 0)}
+                {formatCellValue(val)}
               </motion.div>
             </div>
           );
@@ -211,6 +213,13 @@ const headerCellStyle = {
   fontFamily: 'JetBrains Mono, monospace',
   padding: '0 4px',
 };
+
+function formatCellValue(value: ArrayCellValue): string {
+  // Java DP implementations commonly use Integer.MAX_VALUE - 1 as infinity.
+  // Keep the table legible without changing the underlying calculation.
+  if (typeof value === 'number' && value >= 2_000_000_000) return '∞';
+  return String(value ?? 0);
+}
 
 function EmptyState({ message }: { message: string }) {
   return (

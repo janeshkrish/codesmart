@@ -40,12 +40,12 @@ describe('FrontendExecutionEngine', () => {
   it('captures nested recursive calls and their returned values', async () => {
     const sourceCode = `public class Main {
   static int fib(int n) { if (n <= 1) return n; return fib(n - 1) + fib(n - 2); }
-  public static void main(String[] args) { System.out.println(fib(3)); }
+  public static void main(String[] args) { Main solver = new Main(); System.out.println(solver.fib(3)); }
 }`;
     const parameter = { id: 'parameter', type: 'Parameter', label: 'int n', sourceText: 'int n', range: { startLine: 2, startColumn: 1, endLine: 2, endColumn: 1 } };
     const returnBase = { id: 'return-base', type: 'ReturnStmt', label: 'return n', sourceText: 'return n;', range: { startLine: 2, startColumn: 1, endLine: 2, endColumn: 1 } };
     const fib = { id: 'fib', type: 'MethodDeclaration', label: 'fib', range: { startLine: 2, startColumn: 1, endLine: 2, endColumn: 1 }, children: [parameter, { id: 'fib-body', type: 'BlockStmt', label: 'body', children: [{ id: 'if', type: 'IfStmt', label: 'if', sourceText: 'if (n <= 1)', children: [{ id: 'condition', type: 'Condition', label: 'n <= 1', sourceText: 'n <= 1' }, returnBase] }, { id: 'return-recurse', type: 'ReturnStmt', label: 'return fib', sourceText: 'return fib(n - 1) + fib(n - 2);', range: { startLine: 2, startColumn: 1, endLine: 2, endColumn: 1 } }] }] };
-    const main = { id: 'main', type: 'MethodDeclaration', label: 'main', range: { startLine: 3, startColumn: 1, endLine: 3, endColumn: 1 }, children: [{ id: 'main-body', type: 'BlockStmt', label: 'body', children: [{ id: 'print', type: 'ExpressionStmt', label: 'print', sourceText: 'System.out.println(fib(3));', range: { startLine: 3, startColumn: 1, endLine: 3, endColumn: 1 } }] }] };
+    const main = { id: 'main', type: 'MethodDeclaration', label: 'main', range: { startLine: 3, startColumn: 1, endLine: 3, endColumn: 1 }, children: [{ id: 'main-body', type: 'BlockStmt', label: 'body', children: [{ id: 'print', type: 'ExpressionStmt', label: 'print', sourceText: 'System.out.println(solver.fib(3));', range: { startLine: 3, startColumn: 1, endLine: 3, endColumn: 1 } }] }] };
     const analysis = createLoopAnalysis();
     analysis.sourceCode = sourceCode;
     analysis.astRoot = { id: 'root', type: 'CompilationUnit', label: 'root', children: [{ id: 'class', type: 'ClassDeclaration', label: 'Main', children: [fib, main] }] };
@@ -129,5 +129,56 @@ public class Main {
     await engine.run();
 
     expect(engine.getSnapshots().at(-1)?.dpArrays.find(array => array.name === 'dp')?.values1D).toEqual([1, 2, 3]);
+  });
+
+  it('fills a 2D coin-change table from parser-shaped expression declarations', async () => {
+    const line = (startLine: number) => ({ startLine, startColumn: 1, endLine: startLine, endColumn: 1 });
+    const declaration = (id: string, sourceText: string, startLine: number) => ({
+      id, type: 'ExpressionStmt', label: sourceText, sourceText, range: line(startLine),
+      children: [{ id: `${id}-decl`, type: 'VariableDeclaration', label: sourceText.replace(';', ''), sourceText: sourceText.replace(';', ''), range: line(startLine) }],
+    });
+    const assignment = (id: string, sourceText: string, startLine: number) => ({ id, type: 'ExpressionStmt', label: sourceText, sourceText, range: line(startLine) });
+    const loop = (id: string, init: string, condition: string, update: string, children: object[], startLine: number) => ({
+      id, type: 'ForStmt', label: 'for (...)', sourceText: `for (${init}; ${condition}; ${update})`, range: line(startLine), children: [
+        { id: `${id}-init`, type: 'ForInit', label: `init: [${init}]`, sourceText: '', range: line(startLine) },
+        { id: `${id}-condition`, type: 'ForCondition', label: `condition: ${condition}`, sourceText: condition, range: line(startLine) },
+        { id: `${id}-update`, type: 'ForUpdate', label: `update: [${update}]`, sourceText: '', range: line(startLine) },
+        { id: `${id}-body`, type: 'BlockStmt', label: 'body: { Block }', sourceText: '', range: line(startLine), children },
+      ],
+    });
+    const conditional = {
+      id: 'if', type: 'IfStmt', label: 'if', sourceText: 'if (coins[i - 1] <= j)', range: line(8), children: [
+        { id: 'condition', type: 'Condition', label: 'coins[i - 1] <= j', sourceText: 'coins[i - 1] <= j', range: line(8) },
+        { id: 'then', type: 'BlockStmt', label: 'then: { Block }', sourceText: '', range: line(8), children: [assignment('take', 'dp[i][j] = dp[i][j - coins[i - 1]] + // take coin\n dp[i - 1][j];', 8)] },
+        { id: 'else', type: 'BlockStmt', label: 'else: { Block }', sourceText: '', range: line(9), children: [assignment('skip', 'dp[i][j] = dp[i - 1][j];', 9)] },
+      ],
+    };
+    const method = {
+      id: 'change', type: 'MethodDeclaration', label: 'change', sourceText: 'int change(int amount, int[] coins) {}', range: line(2), children: [
+        { id: 'amount-parameter', type: 'Parameter', label: 'int amount', sourceText: 'int amount', range: line(2) },
+        { id: 'coins-parameter', type: 'Parameter', label: 'int[] coins', sourceText: 'int[] coins', range: line(2) },
+        { id: 'change-body', type: 'BlockStmt', label: 'body', sourceText: '', children: [
+          declaration('n', 'int n = coins.length;', 3), declaration('dp', 'int[][] dp = new int[n + 1][amount + 1];', 4),
+          loop('base', 'int i = 0', 'i <= n', 'i++', [assignment('base-write', 'dp[i][0] = 1;', 5)], 5),
+          loop('outer', 'int i = 1', 'i <= n', 'i++', [loop('inner', 'int j = 1', 'j <= amount', 'j++', [conditional], 7)], 7),
+          { id: 'return', type: 'ReturnStmt', label: 'return dp[n][amount]', sourceText: 'return dp[n][amount];', range: line(11) },
+        ] },
+      ],
+    };
+    const main = {
+      id: 'main', type: 'MethodDeclaration', label: 'main', sourceText: 'void main(String[] args) {}', range: line(13), children: [{ id: 'main-body', type: 'BlockStmt', label: 'body', children: [
+        declaration('coins', 'int[] coins = {1, 2, 5};', 14), declaration('amount', 'int amount = 5;', 15),
+        declaration('solver', 'Main solver = new Main();', 16), declaration('answer', 'int answer = change(amount, coins);', 17),
+      ] }],
+    };
+    const analysis = createLoopAnalysis();
+    analysis.astRoot = { id: 'root', type: 'CompilationUnit', label: 'root', children: [{ id: 'class', type: 'ClassDeclaration', label: 'Main', children: [method, main] }] } as any;
+
+    const engine = new FrontendExecutionEngine();
+    engine.init(analysis, new Set());
+    await engine.run();
+
+    expect(engine.getSnapshots().at(-1)?.dpArrays.find(array => array.name === 'dp')?.values2D?.[3]?.[5]).toBe(4);
+    expect(engine.getSnapshots().at(-1)?.variables.answer).toBe(4);
   });
 });
