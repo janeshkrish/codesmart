@@ -1,8 +1,8 @@
 # CodeSmart
 
-CodeSmart is a Visual Java Execution IDE that teaches and explains Java while you type.
+CodeSmart is a Visual Java Execution IDE that teaches and explains Java while you type..
 
-Unlike standard IDEs, CodeSmart visualizes Java execution and memory state (AST, Stack, Heap, Collections, Control Flow) in real-time as you write code, without requiring you to run or compile manually.
+Unlike standard IDEs, CodeSmart visualizes Java execution and memory state (AST, Stack, Heap, Collections, Control Flow) in real-time as you write code, without requiring you to run or compile manually
 
 ## Features
 
