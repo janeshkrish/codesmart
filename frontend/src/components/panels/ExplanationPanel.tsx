@@ -4,7 +4,7 @@ import { useIdeStore } from '../../store/ideStore';
 import ReactMarkdown from 'react-markdown';
 
 export function ExplanationPanel() {
-  const { explanationTitle, explanationText, showExplanation, hideExplanationPanel,
+  const { explanationTitle, explanationText, showExplanation, hideExplanation,
     analysisResult, selectedAstNodeId } = useIdeStore();
 
   // If nothing is selected, show a prompt
@@ -39,7 +39,7 @@ export function ExplanationPanel() {
             {explanationTitle}
           </span>
         </div>
-        <button onClick={hideExplanationPanel} style={{
+        <button onClick={hideExplanation} style={{
           background: 'transparent', border: 'none', color: '#6e7681',
           cursor: 'pointer', fontSize: '14px', padding: '2px 6px',
           borderRadius: '4px',

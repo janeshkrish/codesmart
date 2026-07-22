@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useIdeStore } from '../../store/ideStore';
 
 export function ExplanationOverlay() {
-  const { showExplanation, explanationTitle, explanationText, hideExplanationPanel, setActiveBottomTab } = useIdeStore();
+  const { showExplanation, explanationTitle, explanationText, hideExplanation } = useIdeStore();
 
   const handleViewInPanel = () => {
-    setActiveBottomTab('explanation');
+    // Could open in panel if needed
   };
 
   return (
@@ -56,8 +56,8 @@ export function ExplanationOverlay() {
               >
                 expand
               </button>
-              <button
-                onClick={hideExplanationPanel}
+<button
+                onClick={hideExplanation}
                 style={{ background: 'transparent', border: 'none', color: '#8b949e',
                   cursor: 'pointer', fontSize: '14px', lineHeight: 1 }}
               >

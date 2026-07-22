@@ -436,19 +436,113 @@ export interface StepResult {
 // IDE UI State Types
 // ============================================================
 
+export type LanguageId =
+  | 'java' | 'python' | 'c' | 'cpp' | 'javascript' | 'typescript'
+  | 'go' | 'rust' | 'kotlin' | 'php' | 'csharp' | 'html' | 'css'
+  | 'sql' | 'shell' | 'json' | 'markdown'
+  | 'node' | 'plaintext';
+
 export type VisualizationTab =
   | 'memory' | 'ast' | 'flowchart' | 'callgraph'
   | 'classdiagram' | 'collections' | 'streams' | 'scope' | 'threads'
   | 'looptrace' | 'recursiontree' | 'dptable' | 'memoization';
 
-export type BottomTab = 'symtable' | 'problems' | 'explanation' | 'debugger' | 'search' | 'timeline';
+export type BottomTab =
+  | 'symtable' | 'problems' | 'explanation' | 'debugger' | 'search' | 'timeline'
+  | 'terminal' | 'output' | 'debugConsole' | 'console';
 
 export interface FileNode {
   id: string;
   name: string;
   path: string;
   type: 'file' | 'folder';
-  language?: string;
+  language?: LanguageId;
   children?: FileNode[];
   isOpen?: boolean;
+}
+
+export interface EditorTab {
+  id: string;
+  file: FileNode;
+  isDirty: boolean;
+  language: LanguageId;
+  cursorPosition?: { line: number; column: number };
+  selection?: { startLine: number; startColumn: number; endLine: number; endColumn: number };
+  scrollPosition?: { top: number; left: number };
+}
+
+export interface TerminalInstance {
+  id: string;
+  name: string;
+  cwd: string;
+  shell: string;
+  processId?: string;
+  isRunning: boolean;
+  history: TerminalLine[];
+}
+
+export interface TerminalLine {
+  type: 'stdout' | 'stderr' | 'stdin' | 'system' | 'prompt';
+  text: string;
+  timestamp: number;
+}
+
+export interface DebugConfiguration {
+  name: string;
+  type: LanguageId;
+  request: 'launch' | 'attach';
+  program?: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  console?: 'internalConsole' | 'integratedTerminal' | 'externalTerminal';
+  stopOnEntry?: boolean;
+  preLaunchTask?: string;
+  mainClass?: string;
+}
+
+export interface Breakpoint {
+  id: string;
+  file: string;
+  line: number;
+  column?: number;
+  condition?: string;
+  hitCondition?: string;
+  logMessage?: string;
+  enabled: boolean;
+  verified?: boolean;
+}
+
+export interface Diagnostic {
+  id: string;
+  file: string;
+  range: { startLine: number; startColumn: number; endLine: number; endColumn: number };
+  severity: 'error' | 'warning' | 'info' | 'hint';
+  code?: string;
+  message: string;
+  source: string;
+  relatedInformation?: Diagnostic[];
+}
+
+export interface WorkspaceFolder {
+  uri: string;
+  name: string;
+  index: number;
+}
+
+export interface TaskDefinition {
+  label: string;
+  type: 'shell' | 'process';
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+  group?: 'build' | 'test' | 'none';
+  problemMatcher?: string | string[];
+  presentation?: {
+    echo?: boolean;
+    reveal?: 'always' | 'silent' | 'never';
+    panel?: 'shared' | 'dedicated' | 'new';
+    clear?: boolean;
+  };
 }

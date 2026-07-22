@@ -55,7 +55,9 @@ export function useExecution() {
 
   // Sync breakpoints to engine whenever they change
   useEffect(() => {
-    const breakpoints = useIdeStore.getState().breakpoints;
+    const breakpointsMap = useIdeStore.getState().breakpoints;
+    const breakpoints = new Set<number>();
+    breakpointsMap.forEach(bps => bps.forEach(bp => breakpoints.add(bp.line)));
     executionEngine.setBreakpoints(breakpoints);
   }, []);
 
@@ -63,7 +65,11 @@ export function useExecution() {
   useEffect(() => {
     const unsubscribe = useIdeStore.subscribe(
       (state) => state.breakpoints,
-      (breakpoints) => executionEngine.setBreakpoints(breakpoints),
+      (breakpointsMap) => {
+        const breakpoints = new Set<number>();
+        breakpointsMap.forEach(bps => bps.forEach(bp => breakpoints.add(bp.line)));
+        executionEngine.setBreakpoints(breakpoints);
+      },
     );
     return unsubscribe;
   }, []);
@@ -95,7 +101,11 @@ export function useExecution() {
       return false;
     }
 
-    executionEngine.init(analysis, state.breakpoints);
+    const breakpointsMap = state.breakpoints;
+    const breakpoints = new Set<number>();
+    breakpointsMap.forEach(bps => bps.forEach(bp => breakpoints.add(bp.line)));
+    
+    executionEngine.init(analysis, breakpoints);
     const id = 'local-' + Date.now();
     setExecutionId(id);
     processedLinesRef.current = 0;

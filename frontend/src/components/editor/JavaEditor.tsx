@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import MonacoEditor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import type * as MonacoTypes from 'monaco-editor';
 import { useIdeStore } from '../../store/ideStore';
@@ -8,38 +8,52 @@ export function JavaEditor() {
   const {
     sourceCode, setSourceCode, setCursorPosition,
     analysisResult, highlightedRange, activeFile,
-    breakpoints, toggleBreakpoint, currentExecutionLine
+    breakpoints, toggleBreakpoint, currentExecutionLine,
+    isExecuting,
   } = useIdeStore();
 
   const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
-  const decorationsRef = useRef<MonacoTypes.editor.IEditorDecorationsCollection | null>(null);
+  
+  // Separate decoration collections for different types
+  const executionDecorationsRef = useRef<string[]>([]);
+  const diagnosticDecorationsRef = useRef<string[]>([]);
+  const breakpointDecorationsRef = useRef<string[]>([]);
+  const scopeDecorationsRef = useRef<string[]>([]);
+  const highlightDecorationsRef = useRef<string[]>([]);
+
+  const clearDecorations = useCallback((editor: MonacoTypes.editor.IStandaloneCodeEditor, ref: React.RefObject<string[]>) => {
+    if (ref.current.length > 0) {
+      ref.current = editor.deltaDecorations(ref.current, []);
+    }
+  }, []);
+
+  const setDecorations = useCallback((editor: MonacoTypes.editor.IStandaloneCodeEditor, ref: React.RefObject<string[]>, decorations: MonacoTypes.editor.IModelDeltaDecoration[]) => {
+    ref.current = editor.deltaDecorations(ref.current, decorations);
+  }, []);
 
   const handleMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
 
-    // Configure Java language features
     monaco.languages.register({ id: 'java' });
 
-    // Cursor position tracking
     editor.onDidChangeCursorPosition((e) => {
       setCursorPosition({ line: e.position.lineNumber, column: e.position.column });
     });
 
-    // Breakpoint toggling on gutter click
     editor.onMouseDown((e) => {
       if (
         e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN ||
         e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS
       ) {
         if (e.target.position) {
-          useIdeStore.getState().toggleBreakpoint(e.target.position.lineNumber);
+          const file = useIdeStore.getState().activeFile?.path || 'Main.java';
+          useIdeStore.getState().toggleBreakpoint(file, e.target.position.lineNumber);
         }
       }
     });
 
-    // Configure editor
     editor.updateOptions({
       fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -74,10 +88,7 @@ export function JavaEditor() {
       },
     });
 
-    // Add Java completions
     registerJavaCompletions(monaco);
-
-    // Add Java hover provider (for types/explanations)
     registerJavaHoverProvider(monaco, editorRef, monacoRef);
 
     editor.addAction({
@@ -85,7 +96,10 @@ export function JavaEditor() {
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
       run: async () => {
         const state = useIdeStore.getState();
-        const saved = await window.electronAPI?.saveJavaFile({ path: state.activeFile?.path.startsWith('/') ? undefined : state.activeFile?.path, content: state.sourceCode });
+        const saved = await window.electronAPI?.saveJavaFile({ 
+          path: state.activeFile?.path.startsWith('/') ? undefined : state.activeFile?.path, 
+          content: state.sourceCode 
+        });
         if (saved) state.setActiveFile({ id: saved.path, name: saved.name, path: saved.path, type: 'file', language: 'java' });
       },
     });
@@ -139,18 +153,95 @@ export function JavaEditor() {
       },
     });
 
-    // Initial decoration
-    updateDecorations(editor, monaco, analysisResult, useIdeStore.getState().breakpoints, useIdeStore.getState().currentExecutionLine);
-  }, []); // eslint-disable-line
+    updateAllDecorations(editor, monaco);
+  }, []);
 
-  // Update decorations when analysis or execution state changes
+  const updateAllDecorations = useCallback((editor: MonacoTypes.editor.IStandaloneCodeEditor, monaco: Monaco) => {
+if (!analysisResult) return;
+     
+     const state = useIdeStore.getState();
+     const currentBreakpoints = state.breakpoints;
+     const currentExecutionLine = state.currentExecutionLine;
+
+     // 1. Diagnostic decorations
+     const diagnosticDecs: MonacoTypes.editor.IModelDeltaDecoration[] = [];
+     for (const diag of analysisResult.diagnostics) {
+       if (!diag.range) continue;
+       const { startLine, startColumn, endLine, endColumn } = diag.range;
+       diagnosticDecs.push({
+         range: new monaco.Range(startLine, startColumn, endLine, endColumn),
+         options: {
+           className: diag.severity === 'ERROR' ? 'cs-error-decoration' : 'cs-warning-decoration',
+           hoverMessage: {
+             value: `**${diag.severity}**: ${diag.humanMessage}${diag.suggestion ? '\n\n💡 ' + diag.suggestion : ''}`,
+             isTrusted: true,
+           },
+           glyphMarginClassName: diag.severity === 'ERROR' ? 'cs-error-glyph' : 'cs-warning-glyph',
+           overviewRuler: {
+             color: diag.severity === 'ERROR' ? '#f85149' : '#d29922',
+             position: monaco.editor.OverviewRulerLane.Right,
+           },
+         }
+       });
+     }
+     setDecorations(editor, diagnosticDecorationsRef, diagnosticDecs);
+
+     // 2. Scope decorations
+     const scopeDecs: MonacoTypes.editor.IModelDeltaDecoration[] = [];
+     for (const scope of analysisResult.scopes) {
+       if (!scope.range || scope.depth === 0) continue;
+       const { startLine, endLine } = scope.range;
+       const colors = ['#7c3aed08', '#06b6d408', '#10b98108', '#f59e0b08'];
+       const color = colors[scope.depth % colors.length];
+       scopeDecs.push({
+         range: new monaco.Range(startLine, 1, endLine, 1),
+         options: {
+           isWholeLine: true,
+           className: 'cs-scope-decoration',
+           linesDecorationsClassName: `cs-scope-line-${scope.depth % 4}`,
+         }
+       });
+     }
+     setDecorations(editor, scopeDecorationsRef, scopeDecs);
+
+     // 3. Breakpoint decorations
+     const bpDecs: MonacoTypes.editor.IModelDeltaDecoration[] = [];
+     for (const bp of currentBreakpoints) {
+       bpDecs.push({
+         range: new monaco.Range(bp, 1, bp, 1),
+         options: {
+           isWholeLine: true,
+           className: 'cs-breakpoint-line',
+           glyphMarginClassName: 'cs-breakpoint-glyph',
+         }
+       });
+     }
+     setDecorations(editor, breakpointDecorationsRef, bpDecs);
+
+     // 4. Current execution line (only when executing)
+     if (currentExecutionLine !== null && isExecuting) {
+       const execDecs: MonacoTypes.editor.IModelDeltaDecoration[] = [{
+         range: new monaco.Range(currentExecutionLine, 1, currentExecutionLine, 1),
+         options: {
+           isWholeLine: true,
+           className: 'cs-current-line',
+           glyphMarginClassName: 'cs-current-line-glyph',
+         }
+       }];
+       setDecorations(editor, executionDecorationsRef, execDecs);
+     } else {
+       clearDecorations(editor, executionDecorationsRef);
+     }
+   }, [analysisResult, breakpoints, currentExecutionLine, isExecuting]);
+
+  // Update decorations when state changes
   useEffect(() => {
     if (editorRef.current && monacoRef.current) {
-      updateDecorations(editorRef.current, monacoRef.current, analysisResult, breakpoints, currentExecutionLine);
+      updateAllDecorations(editorRef.current, monacoRef.current);
     }
-  }, [analysisResult, breakpoints, currentExecutionLine]);
+  }, [analysisResult, breakpoints, currentExecutionLine, isExecuting, updateAllDecorations]);
 
-  // Highlight range when selection changes
+  // Highlight range when selection changes (flash effect)
   useEffect(() => {
     if (!editorRef.current || !monacoRef.current || !highlightedRange) return;
     const monaco = monacoRef.current;
@@ -159,13 +250,10 @@ export function JavaEditor() {
     const { startLine, startColumn, endLine, endColumn } = highlightedRange;
     const range = new monaco.Range(startLine, startColumn, endLine, endColumn);
 
-    // Reveal and select
     editor.revealRangeInCenterIfOutsideViewport(range);
     editor.setSelection(range);
 
-    // Flash highlight decoration
-    if (decorationsRef.current) decorationsRef.current.clear();
-    decorationsRef.current = editor.createDecorationsCollection([{
+    highlightDecorationsRef.current = editor.deltaDecorations(highlightDecorationsRef.current, [{
       range,
       options: {
         className: 'cs-highlight-flash',
@@ -174,10 +262,18 @@ export function JavaEditor() {
       }
     }]);
 
-    // Clear flash after 1.5s
-    const timer = setTimeout(() => decorationsRef.current?.clear(), 1500);
+    const timer = setTimeout(() => {
+      highlightDecorationsRef.current = editor.deltaDecorations(highlightDecorationsRef.current, []);
+    }, 1500);
     return () => clearTimeout(timer);
   }, [highlightedRange]);
+
+  // Clear execution highlight when execution stops/finishes
+  useEffect(() => {
+    if (!isExecuting && currentExecutionLine === null && executionDecorationsRef.current.length > 0) {
+      executionDecorationsRef.current = editorRef.current?.deltaDecorations(executionDecorationsRef.current, []) ?? [];
+    }
+  }, [isExecuting, currentExecutionLine]);
 
   return (
     <div style={{
@@ -188,13 +284,39 @@ export function JavaEditor() {
       overflow: 'hidden',
     }}>
       {/* Tab bar */}
-      <div className="tab-bar">
+      <div className="tab-bar" style={{
+        display: 'flex',
+        background: '#161b22',
+        borderBottom: '1px solid #21262d',
+        padding: '0 8px',
+        height: '32px',
+        alignItems: 'center',
+      }}>
         {activeFile && (
-          <div className="tab active" key={activeFile.id}>
-            <span style={{ color: '#06b6d4', fontSize: '11px' }}>●</span>
+          <div className="tab active" key={activeFile.id} style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '4px 12px',
+            background: '#0d1117',
+            borderTopLeftRadius: '6px',
+            borderTopRightRadius: '6px',
+            border: '1px solid #21262d',
+            borderBottom: 'none',
+            marginRight: '4px',
+          }}>
+            <span style={{ color: '#06b6d4', fontSize: '11px', marginRight: '6px' }}>●</span>
             {activeFile.name}
+            <button 
+              onClick={() => {}}
+              style={{ marginLeft: '8px', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer' }}
+              title="Close"
+            >×</button>
           </div>
         )}
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-ghost btn-sm" style={{ marginRight: '8px' }} title="New File">
+          +
+        </button>
       </div>
 
       {/* Monaco Editor */}
@@ -278,90 +400,12 @@ function defineCodeSmartTheme(monaco: Monaco) {
       'scrollbarSlider.hoverBackground': '#30363d90',
       'editorIndentGuide.background': '#21262d',
       'editorIndentGuide.activeBackground': '#30363d',
+      // Custom decoration colors
+      'editorOverviewRuler.currentContentForeground': '#7c3aed',
+      'editorOverviewRuler.errorForeground': '#f85149',
+      'editorOverviewRuler.warningForeground': '#d29922',
     }
   });
-}
-
-// ============================================================
-// Decorations (errors, scope highlights)
-// ============================================================
-
-function updateDecorations(
-  editor: MonacoTypes.editor.IStandaloneCodeEditor,
-  monaco: Monaco,
-  analysisResult: ReturnType<typeof useIdeStore.getState>['analysisResult'],
-  breakpoints: Set<number>,
-  currentExecutionLine: number | null
-) {
-  const decorations: MonacoTypes.editor.IModelDeltaDecoration[] = [];
-
-  if (analysisResult) {
-
-  // Error/warning underlines
-  for (const diag of analysisResult.diagnostics) {
-    if (!diag.range) continue;
-    const { startLine, startColumn, endLine, endColumn } = diag.range;
-    decorations.push({
-      range: new monaco.Range(startLine, startColumn, endLine, endColumn),
-      options: {
-        className: diag.severity === 'ERROR' ? 'cs-error-decoration' : 'cs-warning-decoration',
-        hoverMessage: {
-          value: `**${diag.severity}**: ${diag.humanMessage}${diag.suggestion ? '\n\n💡 ' + diag.suggestion : ''}`,
-          isTrusted: true,
-        },
-        glyphMarginClassName: diag.severity === 'ERROR' ? 'cs-error-glyph' : 'cs-warning-glyph',
-        overviewRuler: {
-          color: diag.severity === 'ERROR' ? '#f85149' : '#d29922',
-          position: monaco.editor.OverviewRulerLane.Right,
-        },
-      }
-    });
-  }
-
-  // Scope highlights
-  for (const scope of analysisResult.scopes) {
-    if (!scope.range || scope.depth === 0) continue;
-    const { startLine, endLine } = scope.range;
-    // Subtle background tint per scope depth
-    const colors = ['#7c3aed08', '#06b6d408', '#10b98108', '#f59e0b08'];
-    const color = colors[scope.depth % colors.length];
-    decorations.push({
-      range: new monaco.Range(startLine, 1, endLine, 1),
-      options: {
-        isWholeLine: true,
-        className: 'cs-scope-decoration',
-        linesDecorationsClassName: `cs-scope-line-${scope.depth % 4}`,
-      }
-    });
-  }
-  }
-
-  // Breakpoints
-  for (const bp of breakpoints) {
-    decorations.push({
-      range: new monaco.Range(bp, 1, bp, 1),
-      options: {
-        isWholeLine: true,
-        className: 'cs-breakpoint-line',
-        glyphMarginClassName: 'cs-breakpoint-glyph',
-      }
-    });
-  }
-
-  // Current Execution Line
-  if (currentExecutionLine !== null) {
-    decorations.push({
-      range: new monaco.Range(currentExecutionLine, 1, currentExecutionLine, 1),
-      options: {
-        isWholeLine: true,
-        className: 'cs-current-line',
-        glyphMarginClassName: 'cs-current-line-glyph',
-      }
-    });
-  }
-
-  // Apply all decorations
-  editor.createDecorationsCollection(decorations);
 }
 
 // ============================================================
@@ -378,7 +422,6 @@ function registerJavaCompletions(monaco: Monaco) {
       );
 
       const suggestions: MonacoTypes.languages.CompletionItem[] = [
-        // Snippets
         {
           label: 'main',
           kind: monaco.languages.CompletionItemKind.Snippet,
@@ -427,7 +470,6 @@ function registerJavaCompletions(monaco: Monaco) {
           documentation: 'Class declaration',
           range,
         },
-        // Keywords
         ...['public', 'private', 'protected', 'static', 'final', 'abstract', 'void',
             'int', 'long', 'double', 'float', 'boolean', 'char', 'byte', 'short',
             'String', 'new', 'return', 'if', 'else', 'while', 'for', 'switch', 'case',
@@ -440,7 +482,6 @@ function registerJavaCompletions(monaco: Monaco) {
           insertText: kw,
           range,
         })),
-        // Common types
         ...['ArrayList', 'HashMap', 'HashSet', 'LinkedList', 'List', 'Map', 'Set',
             'Optional', 'Stream', 'Iterator', 'Comparable', 'Iterable',
             'StringBuilder', 'StringBuffer', 'Object', 'Thread', 'Runnable'
@@ -474,7 +515,6 @@ function registerJavaHoverProvider(
       const word = model.getWordAtPosition(position);
       if (!word) return null;
 
-      // Find matching variable
       const variables = Object.values(analysisResult.symbolTable.variables);
       const match = variables.find(v => v.name === word.word);
 
@@ -504,7 +544,6 @@ function registerJavaHoverProvider(
         };
       }
 
-      // Find matching method
       const methods = Object.values(analysisResult.symbolTable.methods);
       const methodMatch = methods.find(m => m.name === word.word);
       if (methodMatch) {
